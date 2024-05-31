@@ -21,6 +21,7 @@ fn op_route(state: &mut OpState, #[string] path: &str, #[global] router: v8::Glo
     dbg!(path);
     ()
 }
+deno_core::extension!(my_extension, ops = [op_route]);
 
 fn get_init_dir() -> String {
     let args: Vec<String> = env::args().collect();
@@ -39,19 +40,30 @@ fn get_init_dir() -> String {
 async fn main() {
     let dir = get_init_dir();
     let setup_path = [dir, String::from("setup.js")].concat();
+
     let init_module =
         deno_core::resolve_path(&setup_path, env::current_dir().unwrap().as_path()).unwrap();
     let mut js_runtime = deno_core::JsRuntime::new(deno_core::RuntimeOptions {
         module_loader: Some(Rc::new(deno_core::FsModuleLoader)),
+        extensions: vec![my_extension::init_ops()],
         ..Default::default()
     });
     // following https://github.com/DataDog/datadog-static-analyzer/blob/cde26f42f1cdbbeb09650403318234f277138bbd/crates/static-analysis-kernel/src/analysis/ddsa_lib/runtime.rs#L54
 
     let mut route_map: HashMap<String, i32> = HashMap::new();
+    route_map.insert(String::from("begin"), 2);
+
     let hmref = Rc::new(RefCell::new(route_map));
     js_runtime.op_state().borrow_mut().put(Rc::clone(&hmref));
     let mod_id = js_runtime.load_main_es_module(&init_module).await;
     let result = js_runtime.mod_evaluate(mod_id.unwrap());
-    js_runtime.run_event_loop(Default::default()).await;
-    result.await;
+    let res0 = js_runtime.run_event_loop(Default::default()).await;
+    dbg!(res0);
+    dbg!(Rc::clone(&hmref));
+    let res = result.await;
+    dbg!(res);
+    /*match res {
+        Ok(_) => (),
+        Err(s) => {dbg!()}
+    }*/
 }
