@@ -1,9 +1,9 @@
 use deno_core::op2;
 use deno_core::{Extension, OpState};
+use std::cell::{RefCell, RefMut};
 use std::collections::HashMap;
 use std::env;
 use std::rc::Rc;
-use std::sync::{Mutex, OnceLock};
 
 /*const ROUTES: OnceCell<HashMap<String, v8::Global<v8::Function>>> = OnceCell::new();
 
@@ -11,16 +11,16 @@ fn routes_map() -> &'static Mutex<HashMap<String, v8::Global<v8::Function>>> {
     static ARRAY: OnceLock<Mutex<Vec<u8>>> = OnceLock::new();
     ARRAY.get_or_init(|| Mutex::new(vec![]))
 }
-
+*/
 #[op2()]
-fn op_route(#[string] path: &str, #[global] router: v8::Global<v8::Function>) {
-    let r = ROUTES;
-    let &mut current_routes = r.get_mut().unwrap();
-    current_routes.insert(String::from(path), router);
+fn op_route(state: &mut OpState, #[string] path: &str, #[global] router: v8::Global<v8::Function>) {
+    let hmref = state.borrow::<Rc<RefCell<HashMap<String, i32>>>>();
+    let mut routes = hmref.borrow_mut();
+    routes.insert(String::from(path), 3);
     //routes.set(*current_routes);
     dbg!(path);
     ()
-} */
+}
 
 fn get_init_dir() -> String {
     let args: Vec<String> = env::args().collect();
@@ -45,6 +45,11 @@ async fn main() {
         module_loader: Some(Rc::new(deno_core::FsModuleLoader)),
         ..Default::default()
     });
+    // following https://github.com/DataDog/datadog-static-analyzer/blob/cde26f42f1cdbbeb09650403318234f277138bbd/crates/static-analysis-kernel/src/analysis/ddsa_lib/runtime.rs#L54
+
+    let mut route_map: HashMap<String, i32> = HashMap::new();
+    let hmref = Rc::new(RefCell::new(route_map));
+    js_runtime.op_state().borrow_mut().put(Rc::clone(&hmref));
     let mod_id = js_runtime.load_main_es_module(&init_module).await;
     let result = js_runtime.mod_evaluate(mod_id.unwrap());
     js_runtime.run_event_loop(Default::default()).await;
