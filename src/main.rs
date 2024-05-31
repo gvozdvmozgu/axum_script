@@ -45,7 +45,7 @@ async fn main() {
         deno_core::resolve_path(&setup_path, env::current_dir().unwrap().as_path()).unwrap();
     let mut js_runtime = deno_core::JsRuntime::new(deno_core::RuntimeOptions {
         module_loader: Some(Rc::new(deno_core::FsModuleLoader)),
-        extensions: vec![my_extension::init_ops()],
+        extensions: vec![my_extension::init_ops_and_esm()],
         ..Default::default()
     });
     // following https://github.com/DataDog/datadog-static-analyzer/blob/cde26f42f1cdbbeb09650403318234f277138bbd/crates/static-analysis-kernel/src/analysis/ddsa_lib/runtime.rs#L54
