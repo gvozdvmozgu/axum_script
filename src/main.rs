@@ -14,9 +14,9 @@ fn routes_map() -> &'static Mutex<HashMap<String, v8::Global<v8::Function>>> {
 */
 #[op2()]
 fn op_route(state: &mut OpState, #[string] path: &str, #[global] router: v8::Global<v8::Function>) {
-    let hmref = state.borrow::<Rc<RefCell<HashMap<String, i32>>>>();
+    let hmref = state.borrow::<Rc<RefCell<HashMap<String, v8::Global<v8::Function>>>>>();
     let mut routes = hmref.borrow_mut();
-    routes.insert(String::from(path), 3);
+    routes.insert(String::from(path), router);
     //routes.set(*current_routes);
     dbg!(path);
     ()
@@ -50,8 +50,7 @@ async fn main() {
     });
     // following https://github.com/DataDog/datadog-static-analyzer/blob/cde26f42f1cdbbeb09650403318234f277138bbd/crates/static-analysis-kernel/src/analysis/ddsa_lib/runtime.rs#L54
 
-    let mut route_map: HashMap<String, i32> = HashMap::new();
-    route_map.insert(String::from("begin"), 2);
+    let mut route_map: HashMap<String, v8::Global<v8::Function>> = HashMap::new();
 
     let hmref = Rc::new(RefCell::new(route_map));
     js_runtime.op_state().borrow_mut().put(Rc::clone(&hmref));
