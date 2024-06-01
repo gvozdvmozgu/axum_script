@@ -65,14 +65,16 @@ async fn main() {
     let gf = hm.get("foo").unwrap().clone();
     let nnf = gf.open(js_runtime.v8_isolate());
     let scope = &mut js_runtime.handle_scope();
-    let global = js_runtime.get_module_namespace(mod_id.unwrap()).unwrap();
+    //let global = js_runtime.get_module_namespace(mod_id.unwrap()).unwrap();
+    let recv: v8::Local<v8::Value> = v8::Object::new(scope).into();
     //let global_value: v8::Global<v8::Value> = Cast(global);
     //let newval: v8::Value = v8::Object::new(scope).into();
     //let global_obj = global.open(js_runtime.v8_isolate());
     //let global_val: v8::Value = global_obj.into();
     //let recv: v8::Local<v8::Value> = v8::Local::new(scope, global_obj);
-    let recv: v8::Local<v8::Value> = global.into();
+    //let recv: v8::Local<v8::Value> = global.into();
     let func_res = nnf.call(scope, recv, &[]);
+    dbg!(func_res);
 
     /*match res {
         Ok(_) => (),
