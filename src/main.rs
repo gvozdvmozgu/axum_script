@@ -50,7 +50,7 @@ async fn main() {
     });
     // following https://github.com/DataDog/datadog-static-analyzer/blob/cde26f42f1cdbbeb09650403318234f277138bbd/crates/static-analysis-kernel/src/analysis/ddsa_lib/runtime.rs#L54
 
-    let mut route_map: HashMap<String, v8::Global<v8::Function>> = HashMap::new();
+    let route_map: HashMap<String, v8::Global<v8::Function>> = HashMap::new();
 
     let hmref = Rc::new(RefCell::new(route_map));
     js_runtime.op_state().borrow_mut().put(Rc::clone(&hmref));
@@ -73,8 +73,15 @@ async fn main() {
     //let global_val: v8::Value = global_obj.into();
     //let recv: v8::Local<v8::Value> = v8::Local::new(scope, global_obj);
     //let recv: v8::Local<v8::Value> = global.into();
-    let func_res = nnf.call(scope, recv, &[]);
-    dbg!(func_res);
+    let func_res = nnf.call(scope, recv, &[]).unwrap();
+
+    if func_res.is_string() {
+        let s = func_res
+            .to_string(scope)
+            .unwrap()
+            .to_rust_string_lossy(scope);
+        print!("{}", s);
+    }
 
     /*match res {
         Ok(_) => (),
