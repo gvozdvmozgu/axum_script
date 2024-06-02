@@ -2,7 +2,9 @@
   const core = Deno.core;
 
   function argsToMessage(...args) {
-    return args.map((arg) => JSON.stringify(arg)).join(" ");
+    return args
+      .map((arg) => (typeof arg === "string" ? arg : JSON.stringify(arg)))
+      .join(" ");
   }
 
   globalThis.console = {
