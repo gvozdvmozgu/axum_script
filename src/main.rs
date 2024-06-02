@@ -1,10 +1,13 @@
+use axum::body::Body;
+use axum::response::{IntoResponse, Response};
+use axum::{response::Html, routing::get, routing::post, Json, Router};
 use deno_core::op2;
+use deno_core::JsRuntime;
 use deno_core::OpState;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::env;
 use std::rc::Rc;
-
 /*const ROUTES: OnceCell<HashMap<String, v8::Global<v8::Function>>> = OnceCell::new();
 
 fn routes_map() -> &'static Mutex<HashMap<String, v8::Global<v8::Function>>> {
@@ -35,6 +38,10 @@ fn get_init_dir() -> String {
         args[1].clone()
     };
 }
+struct AppState<'a> {
+    routes: Rc<RefCell<HashMap<String, v8::Global<v8::Function>>>>,
+    runtime: &'a mut JsRuntime,
+}
 
 #[tokio::main]
 async fn main() {
@@ -58,13 +65,20 @@ async fn main() {
     let result = js_runtime.mod_evaluate(mod_id.unwrap());
     js_runtime.run_event_loop(Default::default()).await.unwrap();
     result.await.unwrap();
-    let hm = hmref.borrow();
+
+    let state = AppState {
+        routes: Rc::clone(&hmref),
+        runtime: &mut js_runtime,
+    };
     // https://stackoverflow.com/a/76376307/19839414
+}
 
-    let f = hm.get("foo").unwrap().open(js_runtime.v8_isolate());
-    let scope = &mut js_runtime.handle_scope();
+async fn run_route<'a>(state: AppState<'a>, route_name: &str) -> Response<Body> {
+    let hm = state.routes.borrow();
+
+    let f = hm.get(route_name).unwrap().open(state.runtime.v8_isolate());
+    let scope = &mut state.runtime.handle_scope();
     let recv: v8::Local<v8::Value> = v8::Object::new(scope).into();
-
     let func_res = f.call(scope, recv, &[]).unwrap();
 
     if func_res.is_string() {
@@ -72,11 +86,8 @@ async fn main() {
             .to_string(scope)
             .unwrap()
             .to_rust_string_lossy(scope);
-        print!("{}", s);
+        return Html(s).into_response();
+    } else {
+        return Html("").into_response();
     }
-
-    /*match res {
-        Ok(_) => (),
-        Err(s) => {dbg!()}
-    }*/
 }
