@@ -79,13 +79,13 @@ async fn run_route<'a>(state: AppState<'a>, route_name: &str) -> Response<Body> 
 
     let gf = hm.get(route_name).unwrap();
     let func_res_promise = state.runtime.call(gf); //.await.unwrap();
-    state
+    let func_res0 = state
         .runtime
-        .run_event_loop(Default::default())
+        .with_event_loop_promise(func_res_promise, Default::default())
         .await
         .unwrap();
 
-    let func_res0 = func_res_promise.await.unwrap();
+    //let func_res0 = func_res_promise.await.unwrap();
     let scope = &mut state.runtime.handle_scope();
     let func_res = func_res0.open(scope);
 
