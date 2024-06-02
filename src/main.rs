@@ -38,9 +38,9 @@ fn get_init_dir() -> String {
         args[1].clone()
     };
 }
-struct AppState<'a> {
+struct AppState {
     routes: Rc<RefCell<HashMap<String, v8::Global<v8::Function>>>>,
-    runtime: &'a mut JsRuntime,
+    runtime: Rc<RefCell<JsRuntime>>,
 }
 
 #[tokio::main]
@@ -68,25 +68,24 @@ async fn main() {
 
     let state = AppState {
         routes: Rc::clone(&hmref),
-        runtime: &mut js_runtime,
+        runtime: Rc::new(RefCell::new(js_runtime)),
     };
     run_route(state, "foo").await;
     // https://stackoverflow.com/a/76376307/19839414
 }
 
-async fn run_route<'a>(state: AppState<'a>, route_name: &str) -> Response<Body> {
+async fn run_route(state: AppState, route_name: &str) -> Response<Body> {
     let hm = state.routes.borrow();
-
+    let mut runtime = state.runtime.borrow_mut();
     let gf = hm.get(route_name).unwrap();
-    let func_res_promise = state.runtime.call(gf); //.await.unwrap();
-    let func_res0 = state
-        .runtime
+    let func_res_promise = runtime.call(gf); //.await.unwrap();
+    let func_res0 = runtime
         .with_event_loop_promise(func_res_promise, Default::default())
         .await
         .unwrap();
 
     //let func_res0 = func_res_promise.await.unwrap();
-    let scope = &mut state.runtime.handle_scope();
+    let scope = &mut runtime.handle_scope();
     let func_res = func_res0.open(scope);
 
     if func_res.is_string() {
