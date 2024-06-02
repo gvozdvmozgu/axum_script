@@ -21,7 +21,7 @@ fn op_route(state: &mut OpState, #[string] path: &str, #[global] router: v8::Glo
     dbg!(path);
     ()
 }
-deno_core::extension!(my_extension, ops = [op_route]);
+deno_core::extension!(my_extension, ops = [op_route], js = ["src/runtime.js"]);
 
 fn get_init_dir() -> String {
     let args: Vec<String> = env::args().collect();
