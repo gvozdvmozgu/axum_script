@@ -1,6 +1,6 @@
 use axum::body::Body;
 use axum::response::{IntoResponse, Response};
-use axum::{response::Html, routing::get, routing::post, Json, Router};
+use axum::{extract::State, response::Html, routing::get, routing::post, Json, Router};
 use deno_core::op2;
 use deno_core::JsRuntime;
 use deno_core::OpState;
@@ -38,6 +38,7 @@ fn get_init_dir() -> String {
         args[1].clone()
     };
 }
+#[derive(Clone)]
 struct AppState {
     routes: Rc<RefCell<HashMap<String, v8::Global<v8::Function>>>>,
     runtime: Rc<RefCell<JsRuntime>>,
@@ -71,7 +72,14 @@ async fn main() {
         runtime: Rc::new(RefCell::new(js_runtime)),
     };
     run_route(state, "foo").await;
+    /*let app = Router::new()
+    .route("/", get(route_handler))
+    .with_state(state);*/
     // https://stackoverflow.com/a/76376307/19839414
+}
+
+async fn route_handler(State(state): State<AppState>) -> Response<Body> {
+    run_route(state, "foo").await
 }
 
 async fn run_route(state: AppState, route_name: &str) -> Response<Body> {
