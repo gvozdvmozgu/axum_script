@@ -70,22 +70,31 @@ async fn main() {
         routes: Rc::clone(&hmref),
         runtime: &mut js_runtime,
     };
+    run_route(state, "foo").await;
     // https://stackoverflow.com/a/76376307/19839414
 }
 
 async fn run_route<'a>(state: AppState<'a>, route_name: &str) -> Response<Body> {
     let hm = state.routes.borrow();
 
-    let f = hm.get(route_name).unwrap().open(state.runtime.v8_isolate());
+    let gf = hm.get(route_name).unwrap();
+    let func_res_promise = state.runtime.call(gf); //.await.unwrap();
+    state
+        .runtime
+        .run_event_loop(Default::default())
+        .await
+        .unwrap();
+
+    let func_res0 = func_res_promise.await.unwrap();
     let scope = &mut state.runtime.handle_scope();
-    let recv: v8::Local<v8::Value> = v8::Object::new(scope).into();
-    let func_res = f.call(scope, recv, &[]).unwrap();
+    let func_res = func_res0.open(scope);
 
     if func_res.is_string() {
         let s = func_res
             .to_string(scope)
             .unwrap()
             .to_rust_string_lossy(scope);
+        print!("{}", s);
         return Html(s).into_response();
     } else {
         return Html("").into_response();
