@@ -1,7 +1,13 @@
 use axum::body::Body;
 use axum::extract::Path;
 use axum::response::{IntoResponse, Response};
-use axum::{extract::State, response::Html, routing::get, Router};
+use axum::{
+    extract::{Request, State},
+    http::StatusCode,
+    response::Html,
+    routing::get,
+    Router,
+};
 use deno_core::op2;
 use deno_core::JsRuntime;
 use deno_core::OpState;
@@ -75,7 +81,7 @@ impl JsRunner {
         };
     }
 
-    async fn run_loop(&self, mut rx_req: mpsc::Receiver<Request>) {
+    async fn run_loop(&self, mut rx_req: mpsc::Receiver<RouteRequest>) {
         while let Some(req) = rx_req.recv().await {
             req.response_channel
                 .send(self.run_route(&req.route_name).await)
@@ -84,7 +90,7 @@ impl JsRunner {
     }
 
     #[tokio::main]
-    async fn run_thread(rx_req: mpsc::Receiver<Request>) {
+    async fn run_thread(rx_req: mpsc::Receiver<RouteRequest>) {
         let runner = JsRunner::new().await;
         runner.run_loop(rx_req).await;
     }
@@ -93,37 +99,42 @@ impl JsRunner {
         dbg!(route_name);
         let hm = self.routes.borrow();
         let mut runtime = self.runtime.borrow_mut();
-        let gf = hm.get(route_name).unwrap();
-        let func_res_promise = runtime.call(gf); //.await.unwrap();
-        let func_res0 = runtime
-            .with_event_loop_promise(func_res_promise, Default::default())
-            .await
-            .unwrap();
+        //let tgf = hm.get(route_name).unwrap();
+        if let Some(gf) = hm.get(route_name) {
+            let func_res_promise = runtime.call(gf); //.await.unwrap();
+            let func_res0 = runtime
+                .with_event_loop_promise(func_res_promise, Default::default())
+                .await
+                .unwrap();
 
-        //let func_res0 = func_res_promise.await.unwrap();
-        let scope = &mut runtime.handle_scope();
-        let func_res = func_res0.open(scope);
+            //let func_res0 = func_res_promise.await.unwrap();
+            let scope = &mut runtime.handle_scope();
+            let func_res = func_res0.open(scope);
 
-        if func_res.is_string() {
-            let s = func_res
-                .to_string(scope)
-                .unwrap()
-                .to_rust_string_lossy(scope);
-            return Html(s).into_response();
+            if func_res.is_string() {
+                let s = func_res
+                    .to_string(scope)
+                    .unwrap()
+                    .to_rust_string_lossy(scope);
+                return Html(s).into_response();
+            } else {
+                return Html("").into_response();
+            }
         } else {
-            return Html("").into_response();
+            return (StatusCode::NOT_FOUND, Html("404 not found")).into_response();
         }
     }
 }
 
-struct Request {
+struct RouteRequest {
     route_name: String,
     response_channel: oneshot::Sender<Response<Body>>,
+    request: Request,
 }
 
 #[derive(Clone)]
 struct RouteState {
-    tx_req: mpsc::Sender<Request>,
+    tx_req: mpsc::Sender<RouteRequest>,
 }
 
 #[tokio::main]
@@ -148,18 +159,16 @@ async fn main() {
     axum::serve(listener, app).await.unwrap();
 }
 
-async fn req_handler(
-    State(state): State<RouteState>,
-    req: axum::extract::Request,
-) -> Response<Body> {
+async fn req_handler(State(state): State<RouteState>, req: Request) -> Response<Body> {
     let path = req.uri().path();
 
     let (tx, rx) = oneshot::channel();
     state
         .tx_req
-        .send(Request {
+        .send(RouteRequest {
             route_name: String::from(path),
             response_channel: tx,
+            request: req,
         })
         .await
         .unwrap();
