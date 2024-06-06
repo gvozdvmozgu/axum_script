@@ -1,4 +1,5 @@
 use axum::body::Body;
+use axum::extract::Path;
 use axum::response::{IntoResponse, Response};
 use axum::{extract::State, response::Html, routing::get, Router};
 use deno_core::op2;
@@ -136,7 +137,8 @@ async fn main() {
     print!("Starting server");
     let rstate = RouteState { tx_req: tx_req };
     let app = Router::new()
-        .route("/", get(route_handler))
+        .route("/", get(main_handler))
+        .route("/*key", get(sub_handler))
         .with_state(rstate);
     // run it
     let listener = tokio::net::TcpListener::bind("127.0.0.1:4000")
@@ -146,12 +148,21 @@ async fn main() {
     axum::serve(listener, app).await.unwrap();
 }
 
-async fn route_handler(State(state): State<RouteState>) -> Response<Body> {
+async fn main_handler(State(state): State<RouteState>) -> Response<Body> {
+    return handler_for_path(state, String::from("/")).await;
+}
+
+async fn sub_handler(State(state): State<RouteState>, Path(path): Path<String>) -> Response<Body> {
+    return handler_for_path(state, [String::from("/"), path].concat()).await;
+}
+
+async fn handler_for_path((state): RouteState, path: String) -> Response<Body> {
+    //dbg!(path);
     let (tx, rx) = oneshot::channel();
     state
         .tx_req
         .send(Request {
-            route_name: String::from("foo"),
+            route_name: path,
             response_channel: tx,
         })
         .await
