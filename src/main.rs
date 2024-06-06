@@ -84,10 +84,9 @@ async fn js_thread(mut rx_req: mpsc::Receiver<Request>) {
         runtime: Rc::new(RefCell::new(js_runtime)),
     };
     //run_route(state, "foo").await;
-    while let Some(message) = rx_req.recv().await {
-        println!("GOT = {}", message.route_name);
-        message
-            .response_channel
+    while let Some(req) = rx_req.recv().await {
+        println!("GOT = {}", req.route_name);
+        req.response_channel
             .send(run_route(&state, "foo").await)
             .unwrap();
     }
