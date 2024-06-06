@@ -8,6 +8,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::env;
 use std::rc::Rc;
+use std::thread;
 /*const ROUTES: OnceCell<HashMap<String, v8::Global<v8::Function>>> = OnceCell::new();
 
 fn routes_map() -> &'static Mutex<HashMap<String, v8::Global<v8::Function>>> {
@@ -44,8 +45,12 @@ struct AppState {
     runtime: Rc<RefCell<JsRuntime>>,
 }
 
+#[derive(Clone)]
+struct RouteState {
+    x: u64,
+}
 #[tokio::main]
-async fn main() {
+async fn js_thread() {
     let dir = get_init_dir();
     let setup_path = [dir, String::from("setup.js")].concat();
 
@@ -72,14 +77,30 @@ async fn main() {
         runtime: Rc::new(RefCell::new(js_runtime)),
     };
     run_route(state, "foo").await;
-    /*let app = Router::new()
-    .route("/", get(route_handler))
-    .with_state(state);*/
-    // https://stackoverflow.com/a/76376307/19839414
 }
 
-async fn route_handler(State(state): State<AppState>) -> Response<Body> {
-    run_route(state, "foo").await
+#[tokio::main]
+async fn main() {
+    thread::spawn(|| {
+        js_thread();
+    })
+    .join()
+    .expect("Thread panicked");
+
+    let rstate = RouteState { x: 1 };
+    let app = Router::new()
+        .route("/", get(route_handler))
+        .with_state(rstate);
+    // run it
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:4000")
+        .await
+        .unwrap();
+    println!("listening on {}", listener.local_addr().unwrap());
+    axum::serve(listener, app).await.unwrap();
+}
+
+async fn route_handler(State(_state): State<RouteState>) -> Response<Body> {
+    Html("").into_response()
 }
 
 async fn run_route(state: AppState, route_name: &str) -> Response<Body> {
