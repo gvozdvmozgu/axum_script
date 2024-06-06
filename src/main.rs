@@ -82,6 +82,12 @@ impl JsRunner {
         }
     }
 
+    #[tokio::main]
+    async fn run_thread(rx_req: mpsc::Receiver<Request>) {
+        let runner = JsRunner::new().await;
+        runner.run_loop(rx_req).await;
+    }
+
     async fn run_route(&self, route_name: &str) -> Response<Body> {
         dbg!(route_name);
         let hm = self.routes.borrow();
@@ -118,17 +124,12 @@ struct Request {
 struct RouteState {
     tx_req: mpsc::Sender<Request>,
 }
-#[tokio::main]
-async fn js_thread(rx_req: mpsc::Receiver<Request>) {
-    let runner = JsRunner::new().await;
-    runner.run_loop(rx_req).await;
-}
 
 #[tokio::main]
 async fn main() {
     let (tx_req, rx_req) = mpsc::channel(32);
     thread::spawn(|| {
-        js_thread(rx_req);
+        JsRunner::run_thread(rx_req);
     });
     //.join()
     //.expect("Thread panicked");
