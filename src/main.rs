@@ -137,8 +137,8 @@ async fn main() {
     print!("Starting server");
     let rstate = RouteState { tx_req: tx_req };
     let app = Router::new()
-        .route("/", get(main_handler))
-        .route("/*key", get(sub_handler))
+        .route("/", get(req_handler))
+        .route("/*key", get(req_handler))
         .with_state(rstate);
     // run it
     let listener = tokio::net::TcpListener::bind("127.0.0.1:4000")
@@ -148,12 +148,12 @@ async fn main() {
     axum::serve(listener, app).await.unwrap();
 }
 
-async fn main_handler(State(state): State<RouteState>) -> Response<Body> {
-    return handler_for_path(state, String::from("/")).await;
-}
-
-async fn sub_handler(State(state): State<RouteState>, Path(path): Path<String>) -> Response<Body> {
-    return handler_for_path(state, [String::from("/"), path].concat()).await;
+async fn req_handler(
+    State(state): State<RouteState>,
+    req: axum::extract::Request,
+) -> Response<Body> {
+    let path = req.uri().path();
+    return handler_for_path(state, String::from(path)).await;
 }
 
 async fn handler_for_path(state: RouteState, path: String) -> Response<Body> {
