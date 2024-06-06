@@ -153,16 +153,12 @@ async fn req_handler(
     req: axum::extract::Request,
 ) -> Response<Body> {
     let path = req.uri().path();
-    return handler_for_path(state, String::from(path)).await;
-}
 
-async fn handler_for_path(state: RouteState, path: String) -> Response<Body> {
-    //dbg!(path);
     let (tx, rx) = oneshot::channel();
     state
         .tx_req
         .send(Request {
-            route_name: path,
+            route_name: String::from(path),
             response_channel: tx,
         })
         .await
