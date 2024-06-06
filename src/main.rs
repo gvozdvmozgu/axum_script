@@ -95,6 +95,13 @@ impl JsRunner {
         runner.run_loop(rx_req).await;
     }
 
+    fn spawn_thread() -> mpsc::Sender<RouteRequest> {
+        let (tx_req, rx_req) = mpsc::channel(32);
+        thread::spawn(|| {
+            JsRunner::run_thread(rx_req);
+        });
+        return tx_req;
+    }
     async fn run_route(&self, route_name: &str) -> Response<Body> {
         dbg!(route_name);
         let hm = self.routes.borrow();
@@ -139,10 +146,7 @@ struct RouteState {
 
 #[tokio::main]
 async fn main() {
-    let (tx_req, rx_req) = mpsc::channel(32);
-    thread::spawn(|| {
-        JsRunner::run_thread(rx_req);
-    });
+    let tx_req = JsRunner::spawn_thread();
     //.join()
     //.expect("Thread panicked");
     print!("Starting server");
