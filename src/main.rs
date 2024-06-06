@@ -156,7 +156,7 @@ async fn sub_handler(State(state): State<RouteState>, Path(path): Path<String>) 
     return handler_for_path(state, [String::from("/"), path].concat()).await;
 }
 
-async fn handler_for_path((state): RouteState, path: String) -> Response<Body> {
+async fn handler_for_path(state: RouteState, path: String) -> Response<Body> {
     //dbg!(path);
     let (tx, rx) = oneshot::channel();
     state
