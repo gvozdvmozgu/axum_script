@@ -40,11 +40,48 @@ fn get_init_dir() -> String {
     };
 }
 #[derive(Clone)]
-struct AppState {
+struct JsRunner {
     routes: Rc<RefCell<HashMap<String, v8::Global<v8::Function>>>>,
     runtime: Rc<RefCell<JsRuntime>>,
 }
 
+impl JsRunner {
+    async fn new() -> JsRunner {
+        let dir = get_init_dir();
+        let setup_path = [dir, String::from("setup.js")].concat();
+
+        let init_module =
+            deno_core::resolve_path(&setup_path, env::current_dir().unwrap().as_path()).unwrap();
+        let mut js_runtime = deno_core::JsRuntime::new(deno_core::RuntimeOptions {
+            module_loader: Some(Rc::new(deno_core::FsModuleLoader)),
+            extensions: vec![my_extension::init_ops_and_esm()],
+            ..Default::default()
+        });
+        // following https://github.com/DataDog/datadog-static-analyzer/blob/cde26f42f1cdbbeb09650403318234f277138bbd/crates/static-analysis-kernel/src/analysis/ddsa_lib/runtime.rs#L54
+
+        let route_map: HashMap<String, v8::Global<v8::Function>> = HashMap::new();
+
+        let hmref = Rc::new(RefCell::new(route_map));
+        js_runtime.op_state().borrow_mut().put(Rc::clone(&hmref));
+        let mod_id = js_runtime.load_main_es_module(&init_module).await;
+        let result = js_runtime.mod_evaluate(mod_id.unwrap());
+        js_runtime.run_event_loop(Default::default()).await.unwrap();
+        result.await.unwrap();
+
+        return JsRunner {
+            routes: Rc::clone(&hmref),
+            runtime: Rc::new(RefCell::new(js_runtime)),
+        };
+    }
+
+    async fn run_loop(&self, mut rx_req: mpsc::Receiver<Request>) {
+        while let Some(req) = rx_req.recv().await {
+            req.response_channel
+                .send(run_route(self, &req.route_name).await)
+                .unwrap();
+        }
+    }
+}
 struct Request {
     route_name: String,
     response_channel: oneshot::Sender<Response<Body>>,
@@ -55,38 +92,9 @@ struct RouteState {
     tx_req: mpsc::Sender<Request>,
 }
 #[tokio::main]
-async fn js_thread(mut rx_req: mpsc::Receiver<Request>) {
-    let dir = get_init_dir();
-    let setup_path = [dir, String::from("setup.js")].concat();
-
-    let init_module =
-        deno_core::resolve_path(&setup_path, env::current_dir().unwrap().as_path()).unwrap();
-    let mut js_runtime = deno_core::JsRuntime::new(deno_core::RuntimeOptions {
-        module_loader: Some(Rc::new(deno_core::FsModuleLoader)),
-        extensions: vec![my_extension::init_ops_and_esm()],
-        ..Default::default()
-    });
-    // following https://github.com/DataDog/datadog-static-analyzer/blob/cde26f42f1cdbbeb09650403318234f277138bbd/crates/static-analysis-kernel/src/analysis/ddsa_lib/runtime.rs#L54
-
-    let route_map: HashMap<String, v8::Global<v8::Function>> = HashMap::new();
-
-    let hmref = Rc::new(RefCell::new(route_map));
-    js_runtime.op_state().borrow_mut().put(Rc::clone(&hmref));
-    let mod_id = js_runtime.load_main_es_module(&init_module).await;
-    let result = js_runtime.mod_evaluate(mod_id.unwrap());
-    js_runtime.run_event_loop(Default::default()).await.unwrap();
-    result.await.unwrap();
-
-    let state = AppState {
-        routes: Rc::clone(&hmref),
-        runtime: Rc::new(RefCell::new(js_runtime)),
-    };
-    //run_route(state, "foo").await;
-    while let Some(req) = rx_req.recv().await {
-        req.response_channel
-            .send(run_route(&state, &req.route_name).await)
-            .unwrap();
-    }
+async fn js_thread(rx_req: mpsc::Receiver<Request>) {
+    let runner = JsRunner::new().await;
+    runner.run_loop(rx_req).await;
 }
 
 #[tokio::main]
@@ -129,7 +137,8 @@ async fn route_handler(State(state): State<RouteState>) -> Response<Body> {
     }
 }
 
-async fn run_route(state: &AppState, route_name: &str) -> Response<Body> {
+async fn run_route(state: &JsRunner, route_name: &str) -> Response<Body> {
+    dbg!(route_name);
     let hm = state.routes.borrow();
     let mut runtime = state.runtime.borrow_mut();
     let gf = hm.get(route_name).unwrap();
