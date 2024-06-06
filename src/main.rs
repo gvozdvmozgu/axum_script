@@ -10,6 +10,7 @@ use std::env;
 use std::rc::Rc;
 use std::thread;
 use tokio::sync::mpsc;
+use tokio::sync::oneshot;
 /*const ROUTES: OnceCell<HashMap<String, v8::Global<v8::Function>>> = OnceCell::new();
 
 fn routes_map() -> &'static Mutex<HashMap<String, v8::Global<v8::Function>>> {
@@ -46,12 +47,17 @@ struct AppState {
     runtime: Rc<RefCell<JsRuntime>>,
 }
 
+struct Request {
+    route_name: String,
+    response_channel: oneshot::Sender<Response<Body>>,
+}
+
 #[derive(Clone)]
 struct RouteState {
-    tx: mpsc::Sender<u32>,
+    tx_req: mpsc::Sender<Request>,
 }
 #[tokio::main]
-async fn js_thread(mut rx: mpsc::Receiver<u32>) {
+async fn js_thread(mut rx_req: mpsc::Receiver<Request>) {
     let dir = get_init_dir();
     let setup_path = [dir, String::from("setup.js")].concat();
 
@@ -77,22 +83,26 @@ async fn js_thread(mut rx: mpsc::Receiver<u32>) {
         routes: Rc::clone(&hmref),
         runtime: Rc::new(RefCell::new(js_runtime)),
     };
-    run_route(state, "foo").await;
-    while let Some(message) = rx.recv().await {
-        println!("GOT = {}", message);
+    //run_route(state, "foo").await;
+    while let Some(message) = rx_req.recv().await {
+        println!("GOT = {}", message.route_name);
+        message
+            .response_channel
+            .send(run_route(&state, "foo").await)
+            .unwrap();
     }
 }
 
 #[tokio::main]
 async fn main() {
-    let (tx, mut rx) = mpsc::channel(32);
+    let (tx_req, rx_req) = mpsc::channel(32);
     thread::spawn(|| {
-        js_thread(rx);
+        js_thread(rx_req);
     });
     //.join()
     //.expect("Thread panicked");
     print!("Starting server");
-    let rstate = RouteState { tx: tx };
+    let rstate = RouteState { tx_req: tx_req };
     let app = Router::new()
         .route("/", get(route_handler))
         .with_state(rstate);
@@ -105,11 +115,25 @@ async fn main() {
 }
 
 async fn route_handler(State(state): State<RouteState>) -> Response<Body> {
-    state.tx.send(3).await.unwrap();
-    Html("HELLO FROM SERVER").into_response()
+    let (tx, rx) = oneshot::channel();
+    state
+        .tx_req
+        .send(Request {
+            route_name: String::from("foo"),
+            response_channel: tx,
+        })
+        .await
+        .unwrap();
+    match rx.await {
+        Ok(v) => v,
+        Err(e) => {
+            dbg!(e);
+            panic!("the sender dropped")
+        }
+    }
 }
 
-async fn run_route(state: AppState, route_name: &str) -> Response<Body> {
+async fn run_route(state: &AppState, route_name: &str) -> Response<Body> {
     let hm = state.routes.borrow();
     let mut runtime = state.runtime.borrow_mut();
     let gf = hm.get(route_name).unwrap();
