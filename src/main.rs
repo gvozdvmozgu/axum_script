@@ -23,8 +23,6 @@ fn op_route(state: &mut OpState, #[string] path: &str, #[global] router: v8::Glo
     let hmref = state.borrow::<Rc<RefCell<HashMap<String, v8::Global<v8::Function>>>>>();
     let mut routes = hmref.borrow_mut();
     routes.insert(String::from(path), router);
-    //routes.set(*current_routes);
-    dbg!(path);
     ()
 }
 deno_core::extension!(my_extension, ops = [op_route], js = ["src/runtime.js"]);
@@ -85,9 +83,8 @@ async fn js_thread(mut rx_req: mpsc::Receiver<Request>) {
     };
     //run_route(state, "foo").await;
     while let Some(req) = rx_req.recv().await {
-        println!("GOT = {}", req.route_name);
         req.response_channel
-            .send(run_route(&state, "foo").await)
+            .send(run_route(&state, &req.route_name).await)
             .unwrap();
     }
 }
@@ -151,7 +148,6 @@ async fn run_route(state: &AppState, route_name: &str) -> Response<Body> {
             .to_string(scope)
             .unwrap()
             .to_rust_string_lossy(scope);
-        print!("{}", s);
         return Html(s).into_response();
     } else {
         return Html("").into_response();
