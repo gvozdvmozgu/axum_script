@@ -1,6 +1,6 @@
 use axum::body::Body;
 use axum::response::{IntoResponse, Response};
-use axum::{extract::State, response::Html, routing::get, routing::post, Json, Router};
+use axum::{extract::State, response::Html, routing::get, Router};
 use deno_core::op2;
 use deno_core::JsRuntime;
 use deno_core::OpState;
@@ -77,11 +77,38 @@ impl JsRunner {
     async fn run_loop(&self, mut rx_req: mpsc::Receiver<Request>) {
         while let Some(req) = rx_req.recv().await {
             req.response_channel
-                .send(run_route(self, &req.route_name).await)
+                .send(self.run_route(&req.route_name).await)
                 .unwrap();
         }
     }
+
+    async fn run_route(&self, route_name: &str) -> Response<Body> {
+        dbg!(route_name);
+        let hm = self.routes.borrow();
+        let mut runtime = self.runtime.borrow_mut();
+        let gf = hm.get(route_name).unwrap();
+        let func_res_promise = runtime.call(gf); //.await.unwrap();
+        let func_res0 = runtime
+            .with_event_loop_promise(func_res_promise, Default::default())
+            .await
+            .unwrap();
+
+        //let func_res0 = func_res_promise.await.unwrap();
+        let scope = &mut runtime.handle_scope();
+        let func_res = func_res0.open(scope);
+
+        if func_res.is_string() {
+            let s = func_res
+                .to_string(scope)
+                .unwrap()
+                .to_rust_string_lossy(scope);
+            return Html(s).into_response();
+        } else {
+            return Html("").into_response();
+        }
+    }
 }
+
 struct Request {
     route_name: String,
     response_channel: oneshot::Sender<Response<Body>>,
@@ -134,31 +161,5 @@ async fn route_handler(State(state): State<RouteState>) -> Response<Body> {
             dbg!(e);
             panic!("the sender dropped")
         }
-    }
-}
-
-async fn run_route(state: &JsRunner, route_name: &str) -> Response<Body> {
-    dbg!(route_name);
-    let hm = state.routes.borrow();
-    let mut runtime = state.runtime.borrow_mut();
-    let gf = hm.get(route_name).unwrap();
-    let func_res_promise = runtime.call(gf); //.await.unwrap();
-    let func_res0 = runtime
-        .with_event_loop_promise(func_res_promise, Default::default())
-        .await
-        .unwrap();
-
-    //let func_res0 = func_res_promise.await.unwrap();
-    let scope = &mut runtime.handle_scope();
-    let func_res = func_res0.open(scope);
-
-    if func_res.is_string() {
-        let s = func_res
-            .to_string(scope)
-            .unwrap()
-            .to_rust_string_lossy(scope);
-        return Html(s).into_response();
-    } else {
-        return Html("").into_response();
     }
 }
