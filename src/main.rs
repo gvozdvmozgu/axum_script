@@ -36,13 +36,18 @@ fn op_route(state: &mut OpState, #[string] path: &str, #[global] router: v8::Glo
 }
 
 #[op2(async)]
-async fn op_query(state: &mut OpState, #[string] sqlq: &str, qparams: &v8::Array) -> u32 {
+async fn op_query(state: &mut OpState, #[string] sqlq: &str, _qparams: &v8::Array) -> u32 {
     let poolref = state.borrow::<Rc<RefCell<Pool<Sqlite>>>>();
     let pool = poolref.borrow();
     let result = sqlx::query(sqlq).fetch_all(&(*pool)).await.unwrap();
     return result.len().try_into().unwrap();
 }
-deno_core::extension!(my_extension, ops = [op_route], js = ["src/runtime.js"]);
+
+deno_core::extension!(
+    my_extension,
+    ops = [op_route, op_query],
+    js = ["src/runtime.js"]
+);
 
 fn get_init_dir() -> String {
     let args: Vec<String> = env::args().collect();
