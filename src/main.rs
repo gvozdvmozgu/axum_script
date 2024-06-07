@@ -36,13 +36,11 @@ fn op_route(state: &mut OpState, #[string] path: &str, #[global] router: v8::Glo
 }
 
 #[op2(async)]
-async fn op_query(state: &mut OpState, #[string] sqlq: &str, qparams: &v8::Array) {
+async fn op_query(state: &mut OpState, #[string] sqlq: &str, qparams: &v8::Array) -> u32 {
     let poolref = state.borrow::<Rc<RefCell<Pool<Sqlite>>>>();
-    let mut pool = poolref.borrow_mut();
-    let result = sqlx::query("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY NOT NULL, name VARCHAR(250) NOT NULL);").execute(&pool).await.unwrap();
-    /*let hmref = state.borrow::<Rc<RefCell<HashMap<String, v8::Global<v8::Function>>>>>();
-    let mut routes = hmref.borrow_mut();
-    routes.insert(String::from(path), router);*/
+    let pool = poolref.borrow();
+    let result = sqlx::query(sqlq).fetch_all(&(*pool)).await.unwrap();
+    return result.len().try_into().unwrap();
 }
 deno_core::extension!(my_extension, ops = [op_route], js = ["src/runtime.js"]);
 
