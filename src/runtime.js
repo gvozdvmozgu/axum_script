@@ -17,4 +17,5 @@
   };
 
   globalThis.route = Deno.core.ops.op_route;
+  globalThis.query = Deno.core.ops.op_query;
 })(globalThis);

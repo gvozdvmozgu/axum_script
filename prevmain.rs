@@ -13,6 +13,7 @@ use deno_core::JsRuntime;
 use deno_core::OpState;
 use sqlx::Pool;
 use sqlx::{migrate::MigrateDatabase, Sqlite, SqlitePool};
+use std::borrow::BorrowMut;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::env;
@@ -35,14 +36,13 @@ fn op_route(state: &mut OpState, #[string] path: &str, #[global] router: v8::Glo
     ()
 }
 
-#[op2(fast)]
+/*#[op2(fast)]
 fn op_query(state: &mut OpState, #[string] sqlq: &str, qparams: &v8::Array) {
-    let poolref = state.borrow::<Rc<Pool<Sqlite>>>();
-
-    /*let hmref = state.borrow::<Rc<RefCell<HashMap<String, v8::Global<v8::Function>>>>>();
-    let mut routes = hmref.borrow_mut();
+    //let poolref = state.borrow::<Rc<Pool<Sqlite>>>();
+    //let pool = poolref.borrow_mut();
+    /*let mut routes = hmref.borrow_mut();
     routes.insert(String::from(path), router);*/
-}
+}*/
 deno_core::extension!(my_extension, ops = [op_route], js = ["src/runtime.js"]);
 
 fn get_init_dir() -> String {
@@ -76,7 +76,7 @@ async fn connect_database(db_url: &str) -> Pool<Sqlite> {
 struct JsRunner {
     routes: Rc<RefCell<HashMap<String, v8::Global<v8::Function>>>>,
     runtime: Rc<RefCell<JsRuntime>>,
-    // db_pool: Pool<Sqlite>,
+    //db_pool: Rc<Pool<Sqlite>>,
 }
 
 impl JsRunner {
@@ -92,13 +92,14 @@ impl JsRunner {
             ..Default::default()
         });
         // following https://github.com/DataDog/datadog-static-analyzer/blob/cde26f42f1cdbbeb09650403318234f277138bbd/crates/static-analysis-kernel/src/analysis/ddsa_lib/runtime.rs#L54
-        let pool = Rc::new(connect_database("sqlite://sqlite.db").await);
+        // let pool = connect_database("sqlite://sqlite.db").await;
+        //let pool_rc = Rc::new(pool);
 
         let route_map: HashMap<String, v8::Global<v8::Function>> = HashMap::new();
 
         let hmref = Rc::new(RefCell::new(route_map));
-        js_runtime.op_state().borrow_mut().put(Rc::clone(&pool));
         js_runtime.op_state().borrow_mut().put(Rc::clone(&hmref));
+        //js_runtime.op_state().borrow_mut().put(Rc::clone(&pool_rc));
         let mod_id = js_runtime.load_main_es_module(&init_module).await;
         let result = js_runtime.mod_evaluate(mod_id.unwrap());
         js_runtime.run_event_loop(Default::default()).await.unwrap();
@@ -107,7 +108,7 @@ impl JsRunner {
         return JsRunner {
             routes: Rc::clone(&hmref),
             runtime: Rc::new(RefCell::new(js_runtime)),
-            // db_pool: pool,
+            //db_pool: Rc::clone(&pool_rc),
         };
     }
 
