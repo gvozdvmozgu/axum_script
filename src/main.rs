@@ -11,6 +11,8 @@ use axum::{
 use deno_core::op2;
 use deno_core::JsRuntime;
 use deno_core::OpState;
+use sqlx::Pool;
+use sqlx::{migrate::MigrateDatabase, Sqlite, SqlitePool};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::env;
@@ -32,6 +34,13 @@ fn op_route(state: &mut OpState, #[string] path: &str, #[global] router: v8::Glo
     routes.insert(String::from(path), router);
     ()
 }
+
+#[op2(fast)]
+fn op_query(state: &mut OpState, #[string] sqlq: &str, qparams: &v8::Array) {
+    /*let hmref = state.borrow::<Rc<RefCell<HashMap<String, v8::Global<v8::Function>>>>>();
+    let mut routes = hmref.borrow_mut();
+    routes.insert(String::from(path), router);*/
+}
 deno_core::extension!(my_extension, ops = [op_route], js = ["src/runtime.js"]);
 
 fn get_init_dir() -> String {
@@ -46,10 +55,26 @@ fn get_init_dir() -> String {
         args[1].clone()
     };
 }
+
+async fn connect_database(db_url: &str) -> Pool<Sqlite> {
+    if !Sqlite::database_exists(db_url).await.unwrap_or(false) {
+        println!("Creating database {}", db_url);
+        match Sqlite::create_database(db_url).await {
+            Ok(_) => println!("Create db success"),
+            Err(error) => panic!("error: {}", error),
+        }
+    } else {
+        println!("Database already exists");
+    }
+    let db = SqlitePool::connect(db_url).await.unwrap();
+    return db;
+}
+
 #[derive(Clone)]
 struct JsRunner {
     routes: Rc<RefCell<HashMap<String, v8::Global<v8::Function>>>>,
     runtime: Rc<RefCell<JsRuntime>>,
+    db_pool: Pool<Sqlite>,
 }
 
 impl JsRunner {
@@ -74,10 +99,12 @@ impl JsRunner {
         let result = js_runtime.mod_evaluate(mod_id.unwrap());
         js_runtime.run_event_loop(Default::default()).await.unwrap();
         result.await.unwrap();
+        let pool = connect_database("sqlite://sqlite.db").await;
 
         return JsRunner {
             routes: Rc::clone(&hmref),
             runtime: Rc::new(RefCell::new(js_runtime)),
+            db_pool: pool,
         };
     }
 
