@@ -123,7 +123,7 @@ impl JsRunner {
         }
     }
 
-    #[tokio::main]
+    #[tokio::main(flavor = "current_thread")]
     async fn run_thread(rx_req: mpsc::Receiver<RouteRequest>) {
         let runner = JsRunner::new().await;
         runner.run_loop(rx_req).await;
