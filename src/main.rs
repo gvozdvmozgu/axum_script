@@ -35,10 +35,11 @@ fn op_route(state: &mut OpState, #[string] path: &str, #[global] router: v8::Glo
 }
 
 #[op2(async)]
-async fn op_query(state: &mut OpState, #[string] sqlq: &str, _qparams: &v8::Array) -> u32 {
+async fn op_query(state: Rc<RefCell<OpState>>, #[string] sqlq: String) -> u32 {
+    let state = state.borrow();
     let poolref = state.borrow::<Rc<RefCell<Pool<Sqlite>>>>();
     let pool = poolref.borrow();
-    let result = sqlx::query(sqlq).fetch_all(&(*pool)).await.unwrap();
+    let result = sqlx::query(&sqlq).fetch_all(&(*pool)).await.unwrap();
     return result.len().try_into().unwrap();
 }
 
