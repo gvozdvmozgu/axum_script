@@ -120,9 +120,8 @@ impl JsRunner {
 
     async fn run_loop(&self, mut rx_req: mpsc::Receiver<RouteRequest>) {
         while let Some(req) = rx_req.recv().await {
-            req.response_channel
-                .send(self.run_route(&req.route_name).await)
-                .unwrap();
+            let response = self.run_route(&req.route_name).await;
+            req.response_channel.send(response).unwrap();
         }
     }
 
