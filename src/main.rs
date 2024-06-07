@@ -10,8 +10,10 @@ use axum::{
 use deno_core::op2;
 use deno_core::JsRuntime;
 use deno_core::OpState;
+use serde_json::Value;
+use sqltojson::row_to_json;
 use sqlx::Pool;
-use sqlx::{migrate::MigrateDatabase, Sqlite, SqlitePool};
+use sqlx::{migrate::MigrateDatabase, Any, AnyPool, Sqlite};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::env;
@@ -19,13 +21,9 @@ use std::rc::Rc;
 use std::thread;
 use tokio::sync::mpsc;
 use tokio::sync::oneshot;
-/*const ROUTES: OnceCell<HashMap<String, v8::Global<v8::Function>>> = OnceCell::new();
 
-fn routes_map() -> &'static Mutex<HashMap<String, v8::Global<v8::Function>>> {
-    static ARRAY: OnceLock<Mutex<Vec<u8>>> = OnceLock::new();
-    ARRAY.get_or_init(|| Mutex::new(vec![]))
-}
-*/
+mod sqltojson;
+
 #[op2()]
 fn op_route(state: &mut OpState, #[string] path: &str, #[global] router: v8::Global<v8::Function>) {
     let hmref = state.borrow::<Rc<RefCell<HashMap<String, v8::Global<v8::Function>>>>>();
@@ -37,10 +35,12 @@ fn op_route(state: &mut OpState, #[string] path: &str, #[global] router: v8::Glo
 #[op2(async)]
 async fn op_query(state: Rc<RefCell<OpState>>, #[string] sqlq: String) -> u32 {
     let state = state.borrow();
-    let poolref = state.borrow::<Rc<RefCell<Pool<Sqlite>>>>();
+    let poolref = state.borrow::<Rc<RefCell<Pool<Any>>>>();
     let pool = poolref.borrow();
-    let result = sqlx::query(&sqlq).fetch_all(&(*pool)).await.unwrap();
-    return result.len().try_into().unwrap();
+    let rows = sqlx::query(&sqlq).fetch_all(&(*pool)).await.unwrap();
+    let rows: Vec<Value> = rows.iter().map(row_to_json).collect();
+    dbg!(&rows);
+    return rows.len().try_into().unwrap();
 }
 
 deno_core::extension!(
@@ -62,7 +62,8 @@ fn get_init_dir() -> String {
     };
 }
 
-async fn connect_database(db_url: &str) -> Pool<Sqlite> {
+async fn connect_database(db_url: &str) -> Pool<Any> {
+    sqlx::any::install_default_drivers();
     if !Sqlite::database_exists(db_url).await.unwrap_or(false) {
         println!("Creating database {}", db_url);
         match Sqlite::create_database(db_url).await {
@@ -72,7 +73,7 @@ async fn connect_database(db_url: &str) -> Pool<Sqlite> {
     } else {
         println!("Database already exists");
     }
-    let db = SqlitePool::connect(db_url).await.unwrap();
+    let db = AnyPool::connect(db_url).await.unwrap();
     return db;
 }
 
