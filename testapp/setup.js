@@ -3,7 +3,7 @@
 console.log("core");
 
 route("/foo", async () => {
-  const n = await query("select 1");
+  const n = await query("select 1 as mynum");
   console.log(n);
   return "hello from the function foo";
 });

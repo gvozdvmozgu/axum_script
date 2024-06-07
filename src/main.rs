@@ -10,7 +10,7 @@ use axum::{
 use deno_core::op2;
 use deno_core::JsRuntime;
 use deno_core::OpState;
-use serde_json::Value;
+use serde_json::{json, Value};
 use sqltojson::row_to_json;
 use sqlx::Pool;
 use sqlx::{migrate::MigrateDatabase, Any, AnyPool, Sqlite};
@@ -33,14 +33,16 @@ fn op_route(state: &mut OpState, #[string] path: &str, #[global] router: v8::Glo
 }
 
 #[op2(async)]
-async fn op_query(state: Rc<RefCell<OpState>>, #[string] sqlq: String) -> u32 {
+#[serde]
+async fn op_query(state: Rc<RefCell<OpState>>, #[string] sqlq: String) -> serde_json::Value {
     let state = state.borrow();
     let poolref = state.borrow::<Rc<RefCell<Pool<Any>>>>();
     let pool = poolref.borrow();
     let rows = sqlx::query(&sqlq).fetch_all(&(*pool)).await.unwrap();
     let rows: Vec<Value> = rows.iter().map(row_to_json).collect();
-    dbg!(&rows);
-    return rows.len().try_into().unwrap();
+    //dbg!(&rows);
+    return Value::Array(rows);
+    //    return rows.len().try_into().unwrap();
 }
 
 deno_core::extension!(
