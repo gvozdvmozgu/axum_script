@@ -1,5 +1,4 @@
 use axum::body::Body;
-use axum::extract::Path;
 use axum::response::{IntoResponse, Response};
 use axum::{
     extract::{Request, State},
