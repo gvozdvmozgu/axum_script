@@ -35,10 +35,11 @@ fn op_route(state: &mut OpState, #[string] path: &str, #[global] router: v8::Glo
     ()
 }
 
-#[op2(fast)]
-fn op_query(state: &mut OpState, #[string] sqlq: &str, qparams: &v8::Array) {
-    let poolref = state.borrow::<Rc<Pool<Sqlite>>>();
-
+#[op2(async)]
+async fn op_query(state: &mut OpState, #[string] sqlq: &str, qparams: &v8::Array) {
+    let poolref = state.borrow::<Rc<RefCell<Pool<Sqlite>>>>();
+    let mut pool = poolref.borrow_mut();
+    let result = sqlx::query("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY NOT NULL, name VARCHAR(250) NOT NULL);").execute(&pool).await.unwrap();
     /*let hmref = state.borrow::<Rc<RefCell<HashMap<String, v8::Global<v8::Function>>>>>();
     let mut routes = hmref.borrow_mut();
     routes.insert(String::from(path), router);*/
@@ -92,7 +93,7 @@ impl JsRunner {
             ..Default::default()
         });
         // following https://github.com/DataDog/datadog-static-analyzer/blob/cde26f42f1cdbbeb09650403318234f277138bbd/crates/static-analysis-kernel/src/analysis/ddsa_lib/runtime.rs#L54
-        let pool = Rc::new(connect_database("sqlite://sqlite.db").await);
+        let pool = Rc::new(RefCell::new(connect_database("sqlite://sqlite.db").await));
 
         let route_map: HashMap<String, v8::Global<v8::Function>> = HashMap::new();
 
