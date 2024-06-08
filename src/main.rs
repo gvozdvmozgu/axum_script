@@ -183,12 +183,12 @@ struct RouteState {
 
 #[tokio::main]
 async fn main() {
-    let tx_req = JsRunner::spawn_thread();
-
     let runner = JsRunner::new().await;
     let routemap = runner.routes.borrow().clone();
     drop(runner);
     let paths = routemap.keys();
+
+    let tx_req = JsRunner::spawn_thread();
 
     print!("Starting server");
     let rstate = RouteState { tx_req: tx_req };
@@ -211,25 +211,29 @@ async fn req_handler(
     raw_params: RawPathParams,
     req: Request,
 ) -> Response<Body> {
-    let path = req.uri().path();
+    let path = match_path.as_str();
     dbg!(path);
-    dbg!(match_path);
     dbg!(raw_params);
     let (tx, rx) = oneshot::channel();
-    state
+    let sendres = state
         .tx_req
         .send(RouteRequest {
             route_name: String::from(path),
             response_channel: tx,
             request: req,
         })
-        .await
-        .unwrap();
-    match rx.await {
-        Ok(v) => v,
+        .await;
+    match sendres {
+        Ok(_) => match rx.await {
+            Ok(v) => v,
+            Err(e) => {
+                dbg!(e);
+                return (StatusCode::INTERNAL_SERVER_ERROR, Html("Error")).into_response();
+            }
+        },
         Err(e) => {
             dbg!(e);
-            panic!("the sender dropped")
+            return (StatusCode::INTERNAL_SERVER_ERROR, Html("Error")).into_response();
         }
     }
 }
