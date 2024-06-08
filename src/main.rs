@@ -121,7 +121,7 @@ impl JsRunner {
 
     async fn run_loop(&self, mut rx_req: mpsc::Receiver<RouteRequest>) {
         while let Some(req) = rx_req.recv().await {
-            let response = self.run_route(&req.route_name).await;
+            let response = self.run_route(&req).await;
             req.response_channel.send(response).unwrap();
         }
     }
@@ -140,20 +140,13 @@ impl JsRunner {
         return tx_req;
     }
 
-    async fn run_loop(&self, mut rx_req: mpsc::Receiver<RouteRequest>) {
-        while let Some(req) = rx_req.recv().await {
-            let response = self.run_route(&req).await;
-            req.response_channel.send(response).unwrap();
-        }
-    }
-
     async fn run_route(&self, req: &RouteRequest) -> Response<Body> {
         //let route_name = .route_name
         //dbg!(route_name);
         let hm = self.routes.borrow();
         let mut runtime = self.runtime.borrow_mut();
         //let tgf = hm.get(route_name).unwrap();
-        if let Some(gf) = hm.get(route_name) {
+        if let Some(gf) = hm.get(&*(req.route_name)) {
             let func_res_promise = runtime.call(gf); //.await.unwrap();
             let func_res0 = runtime
                 .with_event_loop_promise(func_res_promise, Default::default())
