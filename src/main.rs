@@ -188,11 +188,13 @@ async fn main() {
     //.expect("Thread panicked");
     print!("Starting server");
     let rstate = RouteState { tx_req: tx_req };
-    let app = Router::new()
-        .route("/", get(req_handler))
-        .route("/*key", get(req_handler))
+    let paths = vec!["/", "/*key"].into_iter();
+    let app: Router = paths
+        .fold(Router::new(), |router, path| {
+            router.route(path, get(req_handler))
+        })
         .with_state(rstate);
-    // run it
+
     let listener = tokio::net::TcpListener::bind("127.0.0.1:4000")
         .await
         .unwrap();
