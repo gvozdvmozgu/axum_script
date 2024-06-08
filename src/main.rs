@@ -1,4 +1,5 @@
 use axum::body::Body;
+use axum::extract::{MatchedPath, RawPathParams};
 use axum::response::{IntoResponse, Response};
 use axum::{
     extract::{Request, State},
@@ -199,9 +200,16 @@ async fn main() {
     axum::serve(listener, app).await.unwrap();
 }
 
-async fn req_handler(State(state): State<RouteState>, req: Request) -> Response<Body> {
+async fn req_handler(
+    State(state): State<RouteState>,
+    match_path: MatchedPath,
+    raw_params: RawPathParams,
+    req: Request,
+) -> Response<Body> {
     let path = req.uri().path();
-
+    dbg!(path);
+    dbg!(match_path);
+    dbg!(raw_params);
     let (tx, rx) = oneshot::channel();
     state
         .tx_req

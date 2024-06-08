@@ -10,3 +10,7 @@ route("/foo", async () => {
 route("/", async () => {
   return "hello from the function in  main";
 });
+
+route("/baz/:id", async ({ id }) => {
+  return "hello from the function in  main";
+});
