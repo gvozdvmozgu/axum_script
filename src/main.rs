@@ -139,8 +139,17 @@ impl JsRunner {
         });
         return tx_req;
     }
-    async fn run_route(&self, route_name: &str) -> Response<Body> {
-        dbg!(route_name);
+
+    async fn run_loop(&self, mut rx_req: mpsc::Receiver<RouteRequest>) {
+        while let Some(req) = rx_req.recv().await {
+            let response = self.run_route(&req).await;
+            req.response_channel.send(response).unwrap();
+        }
+    }
+
+    async fn run_route(&self, req: &RouteRequest) -> Response<Body> {
+        //let route_name = .route_name
+        //dbg!(route_name);
         let hm = self.routes.borrow();
         let mut runtime = self.runtime.borrow_mut();
         //let tgf = hm.get(route_name).unwrap();
@@ -177,6 +186,7 @@ impl JsRunner {
 struct RouteRequest {
     route_name: String,
     response_channel: oneshot::Sender<Response<Body>>,
+    route_args: serde_json::Map<String, Value>,
     request: Request,
 }
 
@@ -216,6 +226,8 @@ async fn req_handler(
     req: Request,
 ) -> Response<Body> {
     let path = match_path.as_str();
+    let parvals =
+        serde_json::Map::from_iter(raw_params.iter().map(|(k, v)| (String::from(k), v.into())));
     dbg!(path);
     dbg!(raw_params);
     let (tx, rx) = oneshot::channel();
@@ -224,6 +236,7 @@ async fn req_handler(
         .send(RouteRequest {
             route_name: String::from(path),
             response_channel: tx,
+            route_args: parvals,
             request: req,
         })
         .await;
