@@ -148,12 +148,16 @@ impl JsRunner {
             let func_res_promise = runtime.call(gf); //.await.unwrap();
             let func_res0 = runtime
                 .with_event_loop_promise(func_res_promise, Default::default())
-                .await
-                .unwrap();
+                .await;
+            if let Err(e) = func_res0 {
+                dbg!(e);
+                return (StatusCode::INTERNAL_SERVER_ERROR, Html("Error")).into_response();
+            }
+            let func_res1 = func_res0.unwrap();
 
             //let func_res0 = func_res_promise.await.unwrap();
             let scope = &mut runtime.handle_scope();
-            let func_res = func_res0.open(scope);
+            let func_res = func_res1.open(scope);
 
             if func_res.is_string() {
                 let s = func_res
