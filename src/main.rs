@@ -184,11 +184,14 @@ struct RouteState {
 #[tokio::main]
 async fn main() {
     let tx_req = JsRunner::spawn_thread();
-    //.join()
-    //.expect("Thread panicked");
+
+    let runner = JsRunner::new().await;
+    let routemap = runner.routes.borrow().clone();
+    drop(runner);
+    let paths = routemap.keys();
+
     print!("Starting server");
     let rstate = RouteState { tx_req: tx_req };
-    let paths = vec!["/", "/*key"].into_iter();
     let app: Router = paths
         .fold(Router::new(), |router, path| {
             router.route(path, get(req_handler))
