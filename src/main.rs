@@ -10,8 +10,8 @@ use axum::{
 };
 use deno_core::op2;
 use deno_core::JsRuntime;
-use deno_core::OpState;
-use serde_json::{json, Value};
+use deno_core::{serde_v8::to_v8, OpState};
+use serde_json::Value;
 use sqltojson::row_to_json;
 use sqlx::Pool;
 use sqlx::{migrate::MigrateDatabase, Any, AnyPool, Sqlite};
@@ -144,10 +144,20 @@ impl JsRunner {
         //let route_name = .route_name
         //dbg!(route_name);
         let hm = self.routes.borrow();
-        let mut runtime = self.runtime.borrow_mut();
+
         //let tgf = hm.get(route_name).unwrap();
         if let Some(gf) = hm.get(&*(req.route_name)) {
-            let func_res_promise = runtime.call(gf); //.await.unwrap();
+            let mut runtime = self.runtime.borrow_mut();
+            //let scope = &mut runtime.handle_scope();
+            let v8_arg: v8::Local<v8::Value> = to_v8(
+                &mut runtime.handle_scope(),
+                serde_json::Value::Object(req.route_args.clone()),
+            )
+            .unwrap();
+            let args: Vec<v8::Global<v8::Value>> =
+                vec![v8::Global::new(runtime.v8_isolate(), v8_arg)];
+            //drop(scope);
+            let func_res_promise = runtime.call_with_args(gf, &args); //.await.unwrap();
             let func_res0 = runtime
                 .with_event_loop_promise(func_res_promise, Default::default())
                 .await;
@@ -156,9 +166,9 @@ impl JsRunner {
                 return (StatusCode::INTERNAL_SERVER_ERROR, Html("Error")).into_response();
             }
             let func_res1 = func_res0.unwrap();
+            let scope = &mut runtime.handle_scope();
 
             //let func_res0 = func_res_promise.await.unwrap();
-            let scope = &mut runtime.handle_scope();
             let func_res = func_res1.open(scope);
 
             if func_res.is_string() {
