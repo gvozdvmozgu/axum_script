@@ -22,6 +22,7 @@ use std::rc::Rc;
 use std::thread;
 use tokio::sync::mpsc;
 use tokio::sync::oneshot;
+use tokio::task;
 use tokio::time::{sleep, Duration};
 
 mod sqltojson;
@@ -126,10 +127,20 @@ impl JsRunner {
     }
 
     async fn run_loop(&self, mut rx_req: mpsc::Receiver<RouteRequest>) {
-        while let Some(req) = rx_req.recv().await {
-            let response = self.run_route(&req).await;
-            req.response_channel.send(response).unwrap();
-        }
+        let local = task::LocalSet::new();
+        let rc_self = Rc::new(&self);
+        local
+            .run_until(async move {
+                while let Some(req) = rx_req.recv().await {
+                    task::spawn_local(async move {
+                        let response = self.run_route(&req).await;
+                        req.response_channel.send(response).unwrap();
+
+                        // ...
+                    });
+                }
+            })
+            .await;
     }
 
     #[tokio::main(flavor = "current_thread")]
