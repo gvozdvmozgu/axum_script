@@ -22,6 +22,7 @@ use std::rc::Rc;
 use std::thread;
 use tokio::sync::mpsc;
 use tokio::sync::oneshot;
+use tokio::time::{sleep, Duration};
 
 mod sqltojson;
 
@@ -46,9 +47,14 @@ async fn op_query(state: Rc<RefCell<OpState>>, #[string] sqlq: String) -> serde_
     //    return rows.len().try_into().unwrap();
 }
 
+#[op2(async)]
+async fn op_sleep(ms: u32) {
+    sleep(Duration::from_millis(ms.into())).await;
+}
+
 deno_core::extension!(
     my_extension,
-    ops = [op_route, op_query],
+    ops = [op_route, op_query, op_sleep],
     js = ["src/runtime.js"]
 );
 

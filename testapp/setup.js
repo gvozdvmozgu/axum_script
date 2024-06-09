@@ -14,3 +14,7 @@ route("/", async () => {
 route("/baz/:id", async ({ id }) => {
   return `hello from the baz with arg ${id}`;
 });
+route("/sleep", async () => {
+  await sleep(100);
+  return "hello from sleep";
+});
