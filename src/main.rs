@@ -140,12 +140,26 @@ impl JsRunner {
         return tx_req;
     }
 
+    /*fn to_call_args(&self, req: &RouteRequest) -> v8::Global<v8::Value> {
+        let mut runtime = self.runtime.borrow_mut();
+        let mut scope = runtime.handle_scope();
+        let v8_arg: v8::Local<v8::Value> = to_v8(
+            &mut scope,
+            serde_json::Value::Object(req.route_args.clone()),
+        )
+        .unwrap();
+        return v8::Global::new(&mut *scope, v8_arg);
+    }*/
+
     fn to_call_args(&self, req: &RouteRequest) -> v8::Global<v8::Value> {
         let mut runtime = self.runtime.borrow_mut();
-        let scope = &mut runtime.handle_scope();
-        let v8_arg: v8::Local<v8::Value> =
-            to_v8(scope, serde_json::Value::Object(req.route_args.clone())).unwrap();
-        return v8::Global::new(runtime.v8_isolate(), v8_arg);
+        let mut scope = &mut runtime.handle_scope();
+        let v8_arg: v8::Local<v8::Value> = to_v8(
+            &mut scope,
+            serde_json::Value::Object(req.route_args.clone()),
+        )
+        .unwrap();
+        return v8::Global::new(&mut *scope, v8_arg);
     }
 
     async fn run_route(&self, req: &RouteRequest) -> Response<Body> {
@@ -155,9 +169,9 @@ impl JsRunner {
 
         //let tgf = hm.get(route_name).unwrap();
         if let Some(gf) = hm.get(&*(req.route_name)) {
+            let args = vec![self.to_call_args(req)];
             let mut runtime = self.runtime.borrow_mut();
 
-            let args = vec![self.to_call_args(req)];
             //drop(scope);
             let func_res_promise = runtime.call_with_args(gf, &args); //.await.unwrap();
             let func_res0 = runtime

@@ -12,5 +12,5 @@ route("/", async () => {
 });
 
 route("/baz/:id", async ({ id }) => {
-  return "hello from the function in  main";
+  return `hello from the baz with arg ${id}`;
 });
