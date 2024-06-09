@@ -82,7 +82,7 @@ async fn connect_database(db_url: &str) -> Pool<Any> {
 
 #[derive(Clone)]
 struct JsRunner {
-    routes: Rc<RefCell<HashMap<String, v8::Global<v8::Function>>>>,
+    routes: HashMap<String, v8::Global<v8::Function>>,
     runtime: Rc<RefCell<JsRuntime>>,
     // db_pool: Pool<Sqlite>,
 }
@@ -113,7 +113,7 @@ impl JsRunner {
         result.await.unwrap();
 
         return JsRunner {
-            routes: Rc::clone(&hmref),
+            routes: (*hmref.borrow()).clone(),
             runtime: Rc::new(RefCell::new(js_runtime)),
             // db_pool: pool,
         };
@@ -140,17 +140,6 @@ impl JsRunner {
         return tx_req;
     }
 
-    /*fn to_call_args(&self, req: &RouteRequest) -> v8::Global<v8::Value> {
-        let mut runtime = self.runtime.borrow_mut();
-        let mut scope = runtime.handle_scope();
-        let v8_arg: v8::Local<v8::Value> = to_v8(
-            &mut scope,
-            serde_json::Value::Object(req.route_args.clone()),
-        )
-        .unwrap();
-        return v8::Global::new(&mut *scope, v8_arg);
-    }*/
-
     fn to_call_args(&self, req: &RouteRequest) -> v8::Global<v8::Value> {
         let mut runtime = self.runtime.borrow_mut();
         let mut scope = &mut runtime.handle_scope();
@@ -165,7 +154,7 @@ impl JsRunner {
     async fn run_route(&self, req: &RouteRequest) -> Response<Body> {
         //let route_name = .route_name
         //dbg!(route_name);
-        let hm = self.routes.borrow();
+        let hm = &self.routes;
 
         //let tgf = hm.get(route_name).unwrap();
         if let Some(gf) = hm.get(&*(req.route_name)) {
@@ -217,7 +206,7 @@ struct RouteState {
 #[tokio::main]
 async fn main() {
     let runner = JsRunner::new().await;
-    let routemap = runner.routes.borrow().clone();
+    let routemap = runner.routes.clone();
     drop(runner);
     let paths = routemap.keys();
 
