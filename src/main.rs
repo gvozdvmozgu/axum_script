@@ -87,11 +87,23 @@ async fn connect_database(db_url: &str) -> Pool<Any> {
     return db;
 }
 
-#[derive(Clone)]
-struct JsRunner {
+struct JsRunnerInner {
     routes: HashMap<String, v8::Global<v8::Function>>,
     runtime: Rc<RefCell<JsRuntime>>,
     // db_pool: Pool<Sqlite>,
+}
+
+#[derive(Clone)]
+struct JsRunner {
+    inner: Rc<JsRunnerInner>,
+}
+
+impl std::ops::Deref for JsRunner {
+    type Target = JsRunnerInner;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
 }
 
 impl JsRunner {
@@ -120,20 +132,22 @@ impl JsRunner {
         result.await.unwrap();
 
         return JsRunner {
-            routes: (*hmref.borrow()).clone(),
-            runtime: Rc::new(RefCell::new(js_runtime)),
-            // db_pool: pool,
+            inner: Rc::new(JsRunnerInner {
+                routes: (*hmref.borrow()).clone(),
+                runtime: Rc::new(RefCell::new(js_runtime)),
+                // db_pool: pool,
+            }),
         };
     }
 
     async fn run_loop(&self, mut rx_req: mpsc::Receiver<RouteRequest>) {
         let local = task::LocalSet::new();
-        let rc_self = Rc::new(&self);
         local
             .run_until(async move {
                 while let Some(req) = rx_req.recv().await {
+                    let this = self.clone();
                     task::spawn_local(async move {
-                        let response = self.run_route(&req).await;
+                        let response = this.run_route(&req).await;
                         req.response_channel.send(response).unwrap();
 
                         // ...
@@ -157,30 +171,27 @@ impl JsRunner {
         return tx_req;
     }
 
-    fn to_call_args(&self, req: &RouteRequest) -> v8::Global<v8::Value> {
-        let mut runtime = self.runtime.borrow_mut();
-        let mut scope = &mut runtime.handle_scope();
-        let v8_arg: v8::Local<v8::Value> = to_v8(
-            &mut scope,
-            serde_json::Value::Object(req.route_args.clone()),
-        )
-        .unwrap();
-        return v8::Global::new(&mut *scope, v8_arg);
-    }
-
     async fn run_route(&self, req: &RouteRequest) -> Response<Body> {
-        //let route_name = .route_name
-        //dbg!(route_name);
         let hm = &self.routes;
 
-        //let tgf = hm.get(route_name).unwrap();
         if let Some(gf) = hm.get(&*(req.route_name)) {
-            let args = vec![self.to_call_args(req)];
-            let mut runtime = self.runtime.borrow_mut();
+            let func_res_promise = {
+                let runtime = unsafe { &mut *self.runtime.as_ptr() };
+                let args = {
+                    let mut scope = &mut runtime.handle_scope();
+                    let v8_arg: v8::Local<v8::Value> = to_v8(
+                        &mut scope,
+                        serde_json::Value::Object(req.route_args.clone()),
+                    )
+                    .unwrap();
 
-            //drop(scope);
-            let func_res_promise = runtime.call_with_args(gf, &args); //.await.unwrap();
-            let func_res0 = runtime
+                    &[v8::Global::new(&mut *scope, v8_arg)]
+                };
+
+                runtime.call_with_args(gf, args)
+            };
+
+            let func_res0 = unsafe { &mut *self.runtime.as_ptr() }
                 .with_event_loop_promise(func_res_promise, Default::default())
                 .await;
             if let Err(e) = func_res0 {
@@ -188,6 +199,8 @@ impl JsRunner {
                 return (StatusCode::INTERNAL_SERVER_ERROR, Html("Error")).into_response();
             }
             let func_res1 = func_res0.unwrap();
+
+            let runtime = unsafe { &mut *self.runtime.as_ptr() };
             let scope = &mut runtime.handle_scope();
 
             //let func_res0 = func_res_promise.await.unwrap();
