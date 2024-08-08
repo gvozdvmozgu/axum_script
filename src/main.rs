@@ -48,14 +48,24 @@ async fn op_query(state: Rc<RefCell<OpState>>, #[string] sqlq: String) -> serde_
     //    return rows.len().try_into().unwrap();
 }
 
-#[op2(async)]
-async fn op_create_cache(
+#[op2()]
+fn op_create_cache(
     state: Rc<RefCell<OpState>>,
     #[global] create_cache_fn: v8::Global<v8::Function>,
 ) -> () {
     let state = state.borrow();
     let cache_fn_ref = state.borrow::<Rc<RefCell<Option<v8::Global<v8::Function>>>>>();
     cache_fn_ref.replace(Some(create_cache_fn));
+    //dbg!(&rows);
+    return ();
+    //    return rows.len().try_into().unwrap();
+}
+
+#[op2()]
+fn op_flush_cache(state: Rc<RefCell<OpState>>, scope: &mut v8::HandleScope) -> () {
+    let state = state.borrow();
+    let cache_fn_ref = state.borrow::<Rc<RefCell<Option<v8::Global<v8::Function>>>>>();
+    let cache_fn = cache_fn_ref.borrow();
     //dbg!(&rows);
     return ();
     //    return rows.len().try_into().unwrap();
