@@ -2,6 +2,10 @@
 
 console.log("core");
 
+createCache(async () => {
+  return { akey: 1 };
+});
+
 route("/foo", async () => {
   const n = await query("select 1 as mynum");
   return `hello from the function foo ${n[0].mynum}`;
