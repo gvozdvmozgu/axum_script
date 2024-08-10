@@ -191,7 +191,7 @@ impl JsRunner {
         return tx_req;
     }
 
-    async fn run_route(&self, req: &RouteRequest) -> Response<Body> {
+    async fn run_route_value(&self, req: &RouteRequest) -> Result<v8::Value, Response<Body>> {
         let hm = &self.routes;
 
         if let Some(gf) = hm.get(&*(req.route_name)) {
@@ -216,7 +216,7 @@ impl JsRunner {
                 .await;
             if let Err(e) = func_res0 {
                 dbg!(e);
-                return (StatusCode::INTERNAL_SERVER_ERROR, Html("Error")).into_response();
+                return Err((StatusCode::INTERNAL_SERVER_ERROR, Html("Error")).into_response());
             }
             let func_res1 = func_res0.unwrap();
 
@@ -225,18 +225,28 @@ impl JsRunner {
 
             //let func_res0 = func_res_promise.await.unwrap();
             let func_res = func_res1.open(scope);
-
-            if func_res.is_string() {
-                let s = func_res
-                    .to_string(scope)
-                    .unwrap()
-                    .to_rust_string_lossy(scope);
-                return Html(s).into_response();
-            } else {
-                return Html("").into_response();
-            }
+            return Ok(*func_res);
         } else {
-            return (StatusCode::NOT_FOUND, Html("404 not found")).into_response();
+            return Err((StatusCode::NOT_FOUND, Html("404 not found")).into_response());
+        }
+    }
+    async fn run_route(&self, req: &RouteRequest) -> Response<Body> {
+        let res = self.run_route_value(req).await;
+        match res {
+            Ok(func_res) => {
+                let runtime = unsafe { &mut *self.runtime.as_ptr() };
+                let scope = &mut runtime.handle_scope();
+                if func_res.is_string() {
+                    let s = func_res
+                        .to_string(scope)
+                        .unwrap()
+                        .to_rust_string_lossy(scope);
+                    return Html(s).into_response();
+                } else {
+                    return Html("").into_response();
+                }
+            }
+            Err(e) => e,
         }
     }
 }
