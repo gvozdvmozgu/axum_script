@@ -64,15 +64,12 @@ fn op_create_cache(state: &mut OpState, #[global] create_cache_fn: v8::Global<v8
     let hmref = state.borrow::<Rc<RefCell<HashMap<String, v8::Global<v8::Function>>>>>();
     let mut routes = hmref.borrow_mut();
     routes.insert(String::from("__create_cache"), create_cache_fn);
-    dbg!("set cahce fun");
     return ();
     //    return rows.len().try_into().unwrap();
 }
 
 #[op2(async)]
 async fn op_flush_cache(state: Rc<RefCell<OpState>>) -> () {
-    dbg!("flush cache 1");
-
     let state = state.borrow();
     let txref = state.borrow::<Rc<RefCell<Option<mpsc::Sender<RouteRequest>>>>>();
     let otxreq = txref.borrow_mut();
@@ -86,7 +83,6 @@ async fn op_flush_cache(state: Rc<RefCell<OpState>>) -> () {
                 //request: req,
             })
             .await;
-        dbg!("flush cache 2");
 
         match sendres {
             Ok(_) => (),
@@ -94,7 +90,6 @@ async fn op_flush_cache(state: Rc<RefCell<OpState>>) -> () {
                 panic!("Send Error: {}", e);
             }
         }
-        dbg!("flush cache 3");
 
         match rx.await {
             Ok(_v) => return (),
@@ -212,7 +207,6 @@ impl JsRunner {
         local
             .run_until(async move {
                 while let Some(req) = rx_req.recv().await {
-                    dbg!("got req");
                     let this = self.clone();
                     task::spawn_local(async move {
                         let response = this.run_route(&req).await;
@@ -278,18 +272,13 @@ impl JsRunner {
         }
     }
     async fn run_route(&self, req: &RouteRequest) -> Response<Body> {
-        dbg!("run_route 0");
-
         let res = self.run_route_value(req).await;
         if req.route_name == "__create_cache" {
-            dbg!("run_route 1");
-
             let runtime = unsafe { &mut *self.runtime.as_ptr() };
             let scope = &mut runtime.handle_scope();
             let v8_val = v8::Local::new(scope, res.unwrap());
             let serde_val: Value = from_v8(scope, v8_val).unwrap();
             //save to global
-            dbg!("run_route 2");
 
             let mut cache = CACHE_VALUE_LOCK.write().unwrap();
             *cache = serde_val;
