@@ -109,6 +109,7 @@ async fn connect_database(db_url: &str) -> Pool<Any> {
 struct JsRunnerInner {
     routes: HashMap<String, v8::Global<v8::Function>>,
     runtime: Rc<RefCell<JsRuntime>>,
+    send_req: mpsc::Sender<RouteRequest>,
     // db_pool: Pool<Sqlite>,
 }
 
@@ -126,7 +127,7 @@ impl std::ops::Deref for JsRunner {
 }
 
 impl JsRunner {
-    async fn new() -> JsRunner {
+    async fn new(tx_req: mpsc::Sender<RouteRequest>) -> JsRunner {
         let dir = get_init_dir();
         let setup_path = [dir, String::from("setup.js")].concat();
 
@@ -150,12 +151,13 @@ impl JsRunner {
         let result = js_runtime.mod_evaluate(mod_id.unwrap());
         js_runtime.run_event_loop(Default::default()).await.unwrap();
         result.await.unwrap();
+        //let (tx_req, rx_req) = mpsc::channel(32);
 
         return JsRunner {
             inner: Rc::new(JsRunnerInner {
                 routes: (*hmref.borrow()).clone(),
                 runtime: Rc::new(RefCell::new(js_runtime)),
-                // db_pool: pool,
+                send_req: tx_req,
             }),
         };
     }
@@ -178,17 +180,18 @@ impl JsRunner {
     }
 
     #[tokio::main(flavor = "current_thread")]
-    async fn run_thread(rx_req: mpsc::Receiver<RouteRequest>) {
-        let runner = JsRunner::new().await;
+    async fn run_thread(tx_req: mpsc::Sender<RouteRequest>, rx_req: mpsc::Receiver<RouteRequest>) {
+        let runner = JsRunner::new(tx_req).await;
         runner.run_loop(rx_req).await;
     }
 
     fn spawn_thread() -> mpsc::Sender<RouteRequest> {
-        let (tx_req, rx_req) = mpsc::channel(32);
-        thread::spawn(|| {
-            JsRunner::run_thread(rx_req);
+        let (tx_req, rx_req) = mpsc::channel(128);
+        let tx_req1 = tx_req.clone();
+        thread::spawn(move || {
+            JsRunner::run_thread(tx_req.clone(), rx_req);
         });
-        return tx_req;
+        return tx_req1;
     }
 
     async fn run_route_value(&self, req: &RouteRequest) -> Result<v8::Value, Response<Body>> {
@@ -265,7 +268,9 @@ struct RouteState {
 
 #[tokio::main]
 async fn main() {
-    let runner = JsRunner::new().await;
+    let (tx_req, _) = mpsc::channel(32);
+
+    let runner = JsRunner::new(tx_req).await;
     let routemap = runner.routes.clone();
     drop(runner);
     let paths = routemap.keys();
@@ -273,10 +278,14 @@ async fn main() {
     let tx_req = JsRunner::spawn_thread();
 
     print!("Starting server");
-    let rstate = RouteState { tx_req: tx_req };
+    let rstate = RouteState { tx_req };
     let app: Router = paths
         .fold(Router::new(), |router, path| {
-            router.route(path, get(req_handler))
+            if path.starts_with("/") {
+                router.route(path, get(req_handler))
+            } else {
+                router
+            }
         })
         .with_state(rstate);
 
