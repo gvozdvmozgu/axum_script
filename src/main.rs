@@ -49,13 +49,10 @@ async fn op_query(state: Rc<RefCell<OpState>>, #[string] sqlq: String) -> serde_
 }
 
 #[op2()]
-fn op_create_cache(
-    state: Rc<RefCell<OpState>>,
-    #[global] create_cache_fn: v8::Global<v8::Function>,
-) -> () {
-    let state = state.borrow();
-    let cache_fn_ref = state.borrow::<Rc<RefCell<Option<v8::Global<v8::Function>>>>>();
-    cache_fn_ref.replace(Some(create_cache_fn));
+fn op_create_cache(state: &mut OpState, #[global] create_cache_fn: v8::Global<v8::Function>) -> () {
+    let hmref = state.borrow::<Rc<RefCell<HashMap<String, v8::Global<v8::Function>>>>>();
+    let mut routes = hmref.borrow_mut();
+    routes.insert(String::from("__create_cache"), create_cache_fn);
     //dbg!(&rows);
     return ();
     //    return rows.len().try_into().unwrap();
@@ -64,8 +61,7 @@ fn op_create_cache(
 #[op2()]
 fn op_flush_cache(state: Rc<RefCell<OpState>>, scope: &mut v8::HandleScope) -> () {
     let state = state.borrow();
-    let cache_fn_ref = state.borrow::<Rc<RefCell<Option<v8::Global<v8::Function>>>>>();
-    let cache_fn = cache_fn_ref.borrow();
+
     //dbg!(&rows);
     return ();
     //    return rows.len().try_into().unwrap();
@@ -147,14 +143,9 @@ impl JsRunner {
         let route_map: HashMap<String, v8::Global<v8::Function>> = HashMap::new();
 
         let hmref = Rc::new(RefCell::new(route_map));
-        let create_cache_fn: Rc<RefCell<Option<v8::Global<v8::Function>>>> =
-            Rc::new(RefCell::new(None::<v8::Global<v8::Function>>));
+
         js_runtime.op_state().borrow_mut().put(Rc::clone(&pool));
         js_runtime.op_state().borrow_mut().put(Rc::clone(&hmref));
-        js_runtime
-            .op_state()
-            .borrow_mut()
-            .put(Rc::clone(&create_cache_fn));
         let mod_id = js_runtime.load_main_es_module(&init_module).await;
         let result = js_runtime.mod_evaluate(mod_id.unwrap());
         js_runtime.run_event_loop(Default::default()).await.unwrap();
