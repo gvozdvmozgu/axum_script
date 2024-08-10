@@ -9,6 +9,7 @@ use axum::{
     Router,
 };
 use deno_core::op2;
+use deno_core::serde_v8::from_v8;
 use deno_core::JsRuntime;
 use deno_core::{serde_v8::to_v8, OpState};
 use serde_json::Value;
@@ -19,6 +20,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::env;
 use std::rc::Rc;
+use std::sync::RwLock;
 use std::thread;
 use tokio::sync::mpsc;
 use tokio::sync::oneshot;
@@ -26,6 +28,8 @@ use tokio::task;
 use tokio::time::{sleep, Duration};
 
 mod sqltojson;
+
+static CACHE_VALUE_LOCK: RwLock<Value> = RwLock::new(Value::Null);
 
 #[op2()]
 fn op_route(state: &mut OpState, #[string] path: &str, #[global] router: v8::Global<v8::Function>) {
@@ -49,31 +53,46 @@ async fn op_query(state: Rc<RefCell<OpState>>, #[string] sqlq: String) -> serde_
 }
 
 #[op2()]
+#[serde]
+fn op_get_cache_value() -> serde_json::Value {
+    let r1 = CACHE_VALUE_LOCK.read().unwrap();
+    return (*r1).clone(); //TODO this is bad
+}
+
+#[op2()]
 fn op_create_cache(state: &mut OpState, #[global] create_cache_fn: v8::Global<v8::Function>) -> () {
     let hmref = state.borrow::<Rc<RefCell<HashMap<String, v8::Global<v8::Function>>>>>();
     let mut routes = hmref.borrow_mut();
     routes.insert(String::from("__create_cache"), create_cache_fn);
-    //dbg!(&rows);
+    dbg!("set cahce fun");
     return ();
     //    return rows.len().try_into().unwrap();
 }
 
 #[op2(async)]
 async fn op_flush_cache(state: Rc<RefCell<OpState>>) -> () {
+    dbg!("flush cache 1");
+
     let state = state.borrow();
     let txref = state.borrow::<Rc<RefCell<mpsc::Sender<RouteRequest>>>>();
     let txreq = txref.borrow_mut();
     let (tx, rx) = oneshot::channel();
 
-    txreq
+    let sendres = txreq
         .send(RouteRequest {
             route_name: String::from("__create_cache"),
             response_channel: tx,
             route_args: serde_json::Map::new(),
             //request: req,
         })
-        .await
-        .unwrap();
+        .await;
+    match sendres {
+        Ok(_) => (),
+        Err(e) => {
+            panic!("Send Error: {}", e);
+        }
+    }
+
     match rx.await {
         Ok(_v) => return (),
         Err(_e) => {
@@ -89,7 +108,14 @@ async fn op_sleep(ms: u32) {
 
 deno_core::extension!(
     my_extension,
-    ops = [op_route, op_query, op_sleep, op_create_cache],
+    ops = [
+        op_route,
+        op_query,
+        op_sleep,
+        op_create_cache,
+        op_flush_cache,
+        op_get_cache_value
+    ],
     js = ["src/runtime.js"]
 );
 
@@ -210,7 +236,10 @@ impl JsRunner {
         return tx_req1;
     }
 
-    async fn run_route_value(&self, req: &RouteRequest) -> Result<v8::Value, Response<Body>> {
+    async fn run_route_value(
+        &self,
+        req: &RouteRequest,
+    ) -> Result<v8::Global<v8::Value>, Response<Body>> {
         let hm = &self.routes;
 
         if let Some(gf) = hm.get(&*(req.route_name)) {
@@ -239,12 +268,7 @@ impl JsRunner {
             }
             let func_res1 = func_res0.unwrap();
 
-            let runtime = unsafe { &mut *self.runtime.as_ptr() };
-            let scope = &mut runtime.handle_scope();
-
-            //let func_res0 = func_res_promise.await.unwrap();
-            let func_res = func_res1.open(scope);
-            return Ok(*func_res);
+            return Ok(func_res1);
         } else {
             return Err((StatusCode::NOT_FOUND, Html("404 not found")).into_response());
         }
@@ -252,12 +276,22 @@ impl JsRunner {
     async fn run_route(&self, req: &RouteRequest) -> Response<Body> {
         let res = self.run_route_value(req).await;
         if req.route_name == "__create_cache" {
+            let runtime = unsafe { &mut *self.runtime.as_ptr() };
+            let scope = &mut runtime.handle_scope();
+            let v8_val = v8::Local::new(scope, res.unwrap());
+            let serde_val: Value = from_v8(scope, v8_val).unwrap();
+            //save to global
+            let mut cache = CACHE_VALUE_LOCK.write().unwrap();
+            *cache = serde_val;
+
             return Html("").into_response();
         } else {
             match res {
-                Ok(func_res) => {
+                Ok(func_res1) => {
                     let runtime = unsafe { &mut *self.runtime.as_ptr() };
                     let scope = &mut runtime.handle_scope();
+                    let func_res = func_res1.open(scope);
+
                     if func_res.is_string() {
                         let s = func_res
                             .to_string(scope)
@@ -288,8 +322,12 @@ struct RouteState {
 
 #[tokio::main]
 async fn main() {
-    let (tx_req, _) = mpsc::channel(32);
-
+    let (tx_req, mut rx_req) = mpsc::channel(32);
+    tokio::spawn(async move {
+        loop {
+            let _ = rx_req.recv().await;
+        }
+    });
     let runner = JsRunner::new(tx_req).await;
     let routemap = runner.routes.clone();
     drop(runner);

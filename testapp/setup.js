@@ -2,7 +2,8 @@
 
 console.log("core");
 
-createCache(async () => {
+await createCache(async () => {
+  console.log("creating cache");
   return { akey: 1 };
 });
 

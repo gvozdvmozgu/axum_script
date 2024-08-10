@@ -19,5 +19,8 @@
   globalThis.route = Deno.core.ops.op_route;
   globalThis.query = Deno.core.ops.op_query;
   globalThis.sleep = Deno.core.ops.op_sleep;
-  globalThis.createCache = Deno.core.ops.op_create_cache;
+  globalThis.createCache = async (f) => {
+    Deno.core.ops.op_create_cache(f);
+    await Deno.core.ops.op_flush_cache();
+  };
 })(globalThis);
