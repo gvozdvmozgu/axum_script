@@ -58,13 +58,28 @@ fn op_create_cache(state: &mut OpState, #[global] create_cache_fn: v8::Global<v8
     //    return rows.len().try_into().unwrap();
 }
 
-#[op2()]
-fn op_flush_cache(state: Rc<RefCell<OpState>>, scope: &mut v8::HandleScope) -> () {
+#[op2(async)]
+async fn op_flush_cache(state: Rc<RefCell<OpState>>) -> () {
     let state = state.borrow();
+    let txref = state.borrow::<Rc<RefCell<mpsc::Sender<RouteRequest>>>>();
+    let txreq = txref.borrow_mut();
+    let (tx, rx) = oneshot::channel();
 
-    //dbg!(&rows);
-    return ();
-    //    return rows.len().try_into().unwrap();
+    txreq
+        .send(RouteRequest {
+            route_name: String::from("__create_cache"),
+            response_channel: tx,
+            route_args: serde_json::Map::new(),
+            //request: req,
+        })
+        .await
+        .unwrap();
+    match rx.await {
+        Ok(_v) => return (),
+        Err(_e) => {
+            panic!("error in flush cache")
+        }
+    };
 }
 
 #[op2(async)]
@@ -109,7 +124,6 @@ async fn connect_database(db_url: &str) -> Pool<Any> {
 struct JsRunnerInner {
     routes: HashMap<String, v8::Global<v8::Function>>,
     runtime: Rc<RefCell<JsRuntime>>,
-    send_req: mpsc::Sender<RouteRequest>,
     // db_pool: Pool<Sqlite>,
 }
 
@@ -144,9 +158,12 @@ impl JsRunner {
         let route_map: HashMap<String, v8::Global<v8::Function>> = HashMap::new();
 
         let hmref = Rc::new(RefCell::new(route_map));
+        let txref = Rc::new(RefCell::new(tx_req));
 
         js_runtime.op_state().borrow_mut().put(Rc::clone(&pool));
         js_runtime.op_state().borrow_mut().put(Rc::clone(&hmref));
+        js_runtime.op_state().borrow_mut().put(Rc::clone(&txref));
+
         let mod_id = js_runtime.load_main_es_module(&init_module).await;
         let result = js_runtime.mod_evaluate(mod_id.unwrap());
         js_runtime.run_event_loop(Default::default()).await.unwrap();
@@ -157,7 +174,6 @@ impl JsRunner {
             inner: Rc::new(JsRunnerInner {
                 routes: (*hmref.borrow()).clone(),
                 runtime: Rc::new(RefCell::new(js_runtime)),
-                send_req: tx_req,
             }),
         };
     }
@@ -235,21 +251,25 @@ impl JsRunner {
     }
     async fn run_route(&self, req: &RouteRequest) -> Response<Body> {
         let res = self.run_route_value(req).await;
-        match res {
-            Ok(func_res) => {
-                let runtime = unsafe { &mut *self.runtime.as_ptr() };
-                let scope = &mut runtime.handle_scope();
-                if func_res.is_string() {
-                    let s = func_res
-                        .to_string(scope)
-                        .unwrap()
-                        .to_rust_string_lossy(scope);
-                    return Html(s).into_response();
-                } else {
-                    return Html("").into_response();
+        if req.route_name == "__create_cache" {
+            return Html("").into_response();
+        } else {
+            match res {
+                Ok(func_res) => {
+                    let runtime = unsafe { &mut *self.runtime.as_ptr() };
+                    let scope = &mut runtime.handle_scope();
+                    if func_res.is_string() {
+                        let s = func_res
+                            .to_string(scope)
+                            .unwrap()
+                            .to_rust_string_lossy(scope);
+                        return Html(s).into_response();
+                    } else {
+                        return Html("").into_response();
+                    }
                 }
+                Err(e) => e,
             }
-            Err(e) => e,
         }
     }
 }
@@ -258,7 +278,7 @@ struct RouteRequest {
     route_name: String,
     response_channel: oneshot::Sender<Response<Body>>,
     route_args: serde_json::Map<String, Value>,
-    request: Request,
+    //request: Request,
 }
 
 #[derive(Clone)]
@@ -314,7 +334,7 @@ async fn req_handler(
             route_name: String::from(path),
             response_channel: tx,
             route_args: parvals,
-            request: req,
+            //request: req,
         })
         .await;
     match sendres {
