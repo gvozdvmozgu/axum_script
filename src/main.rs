@@ -74,31 +74,35 @@ async fn op_flush_cache(state: Rc<RefCell<OpState>>) -> () {
     dbg!("flush cache 1");
 
     let state = state.borrow();
-    let txref = state.borrow::<Rc<RefCell<mpsc::Sender<RouteRequest>>>>();
-    let txreq = txref.borrow_mut();
+    let txref = state.borrow::<Rc<RefCell<Option<mpsc::Sender<RouteRequest>>>>>();
+    let otxreq = txref.borrow_mut();
     let (tx, rx) = oneshot::channel();
+    if let Some(txreq) = otxreq.as_ref() {
+        let sendres = txreq
+            .send(RouteRequest {
+                route_name: String::from("__create_cache"),
+                response_channel: tx,
+                route_args: serde_json::Map::new(),
+                //request: req,
+            })
+            .await;
+        dbg!("flush cache 2");
 
-    let sendres = txreq
-        .send(RouteRequest {
-            route_name: String::from("__create_cache"),
-            response_channel: tx,
-            route_args: serde_json::Map::new(),
-            //request: req,
-        })
-        .await;
-    match sendres {
-        Ok(_) => (),
-        Err(e) => {
-            panic!("Send Error: {}", e);
+        match sendres {
+            Ok(_) => (),
+            Err(e) => {
+                panic!("Send Error: {}", e);
+            }
         }
+        dbg!("flush cache 3");
+
+        match rx.await {
+            Ok(_v) => return (),
+            Err(_e) => {
+                panic!("error in flush cache")
+            }
+        };
     }
-
-    match rx.await {
-        Ok(_v) => return (),
-        Err(_e) => {
-            panic!("error in flush cache")
-        }
-    };
 }
 
 #[op2(async)]
@@ -167,7 +171,7 @@ impl std::ops::Deref for JsRunner {
 }
 
 impl JsRunner {
-    async fn new(tx_req: mpsc::Sender<RouteRequest>) -> JsRunner {
+    async fn new(tx_req: Option<mpsc::Sender<RouteRequest>>) -> JsRunner {
         let dir = get_init_dir();
         let setup_path = [dir, String::from("setup.js")].concat();
 
@@ -223,7 +227,7 @@ impl JsRunner {
 
     #[tokio::main(flavor = "current_thread")]
     async fn run_thread(tx_req: mpsc::Sender<RouteRequest>, rx_req: mpsc::Receiver<RouteRequest>) {
-        let runner = JsRunner::new(tx_req).await;
+        let runner = JsRunner::new(Some(tx_req)).await;
         runner.run_loop(rx_req).await;
     }
 
@@ -274,13 +278,19 @@ impl JsRunner {
         }
     }
     async fn run_route(&self, req: &RouteRequest) -> Response<Body> {
+        dbg!("run_route 0");
+
         let res = self.run_route_value(req).await;
         if req.route_name == "__create_cache" {
+            dbg!("run_route 1");
+
             let runtime = unsafe { &mut *self.runtime.as_ptr() };
             let scope = &mut runtime.handle_scope();
             let v8_val = v8::Local::new(scope, res.unwrap());
             let serde_val: Value = from_v8(scope, v8_val).unwrap();
             //save to global
+            dbg!("run_route 2");
+
             let mut cache = CACHE_VALUE_LOCK.write().unwrap();
             *cache = serde_val;
 
@@ -322,13 +332,7 @@ struct RouteState {
 
 #[tokio::main]
 async fn main() {
-    let (tx_req, mut rx_req) = mpsc::channel(32);
-    tokio::spawn(async move {
-        loop {
-            let _ = rx_req.recv().await;
-        }
-    });
-    let runner = JsRunner::new(tx_req).await;
+    let runner = JsRunner::new(None).await;
     let routemap = runner.routes.clone();
     drop(runner);
     let paths = routemap.keys();
