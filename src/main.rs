@@ -198,7 +198,6 @@ impl JsRunner {
         let result = js_runtime.mod_evaluate(mod_id.unwrap());
         js_runtime.run_event_loop(Default::default()).await.unwrap();
         result.await.unwrap();
-        //let (tx_req, rx_req) = mpsc::channel(32);
 
         return JsRunner {
             inner: Rc::new(JsRunnerInner {
@@ -213,6 +212,7 @@ impl JsRunner {
         local
             .run_until(async move {
                 while let Some(req) = rx_req.recv().await {
+                    dbg!("got req");
                     let this = self.clone();
                     task::spawn_local(async move {
                         let response = this.run_route(&req).await;
@@ -235,9 +235,9 @@ impl JsRunner {
         let (tx_req, rx_req) = mpsc::channel(128);
         let tx_req1 = tx_req.clone();
         thread::spawn(move || {
-            JsRunner::run_thread(tx_req.clone(), rx_req);
+            JsRunner::run_thread(tx_req1, rx_req);
         });
-        return tx_req1;
+        return tx_req;
     }
 
     async fn run_route_value(
@@ -316,6 +316,17 @@ impl JsRunner {
             }
         }
     }
+
+    async fn populate_initial_cache(&self) {
+        let (tx, _) = oneshot::channel();
+        let req = RouteRequest {
+            route_name: String::from("__create_cache"),
+            response_channel: tx,
+            route_args: serde_json::Map::new(),
+            //request: req,
+        };
+        self.run_route(&req).await;
+    }
 }
 
 struct RouteRequest {
@@ -334,6 +345,7 @@ struct RouteState {
 async fn main() {
     let runner = JsRunner::new(None).await;
     let routemap = runner.routes.clone();
+    runner.populate_initial_cache().await;
     drop(runner);
     let paths = routemap.keys();
 
@@ -367,8 +379,6 @@ async fn req_handler(
     let path = match_path.as_str();
     let parvals =
         serde_json::Map::from_iter(raw_params.iter().map(|(k, v)| (String::from(k), v.into())));
-    dbg!(path);
-    dbg!(raw_params);
     let (tx, rx) = oneshot::channel();
     let sendres = state
         .tx_req

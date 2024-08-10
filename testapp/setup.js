@@ -13,6 +13,8 @@ route("/foo", async () => {
 });
 
 route("/", async () => {
+  const c = getCache();
+  console.log("cache", c);
   return "hello from the function in  main";
 });
 
