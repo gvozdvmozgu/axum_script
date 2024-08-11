@@ -307,14 +307,16 @@ impl JsRunner {
     }
 
     async fn populate_initial_cache(&self) {
-        let (tx, _) = oneshot::channel();
-        let req = RouteRequest {
-            route_name: String::from("__create_cache"),
-            response_channel: tx,
-            route_args: serde_json::Map::new(),
-            //request: req,
-        };
-        self.run_route(&req).await;
+        if self.inner.routes.contains_key("__create_cache") {
+            let (tx, _) = oneshot::channel();
+            let req = RouteRequest {
+                route_name: String::from("__create_cache"),
+                response_channel: tx,
+                route_args: serde_json::Map::new(),
+                //request: req,
+            };
+            self.run_route(&req).await;
+        }
     }
 }
 
