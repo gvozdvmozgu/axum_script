@@ -6,7 +6,7 @@ use axum::{
     http::StatusCode,
     response::Html,
     routing::get,
-    Router,
+    Json, Router,
 };
 use deno_core::op2;
 use deno_core::serde_v8::from_v8;
@@ -345,6 +345,12 @@ impl JsRunner {
                             .to_rust_string_lossy(scope);
                         return Html(s).into_response();
                     } else {
+                        let lres = v8::Local::new(scope, func_res1);
+                        let res: serde_json::Map<String, Value> = from_v8(scope, lres).unwrap();
+                        if res.contains_key("json") {
+                            return Json(res.get("json")).into_response();
+                        }
+
                         return Html("").into_response();
                     }
                 }

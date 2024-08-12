@@ -12,6 +12,11 @@ route("/db-txt", async () => {
   return `hello from the function foo ${n[0].mynum}`;
 });
 
+route("/db-json", async () => {
+  const n = await query("select 1 as mynum");
+  return { json: n };
+});
+
 route("/cache-full", async () => {
   console.log("full cache", getCache());
   console.log("skey cache", getCache("akey"));

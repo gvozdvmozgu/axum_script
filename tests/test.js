@@ -6,5 +6,12 @@ Deno.test("Text from DB", async () => {
   assertEquals(txt, "hello from the function foo 1");
 });
 
-//const jsonData = await resp.json();
-//console.log(jsonData);
+Deno.test("JSON from DB", async () => {
+  const resp = await fetch("http://localhost:4000/db-json");
+  assertEquals(resp.headers.get("content-type"), "application/json");
+
+  const j = await resp.json();
+
+  assert(Array.isArray(j));
+  assertEquals(j[0].mynum, 1);
+});
