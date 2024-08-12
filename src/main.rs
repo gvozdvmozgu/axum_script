@@ -95,7 +95,6 @@ fn op_create_cache(state: &mut OpState, #[global] create_cache_fn: v8::Global<v8
 #[op2()]
 #[serde]
 fn op_with_cache<'s>(
-    state: &mut OpState,
     scope: &mut v8::HandleScope<'s>,
     #[global] gxformer: v8::Global<v8::Function>,
 ) -> serde_json::Value {
