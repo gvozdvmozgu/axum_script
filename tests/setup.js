@@ -17,6 +17,10 @@ route("/db-json", async () => {
   return { json: n };
 });
 
+route("/teapot", async () => {
+  return { html: "short and stout", status: 418 };
+});
+
 route("/cache-full", async () => {
   console.log("full cache", getCache());
   console.log("skey cache", getCache("akey"));

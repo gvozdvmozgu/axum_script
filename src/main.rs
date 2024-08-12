@@ -348,7 +348,12 @@ impl JsRunner {
                         let lres = v8::Local::new(scope, func_res1);
                         let res: serde_json::Map<String, Value> = from_v8(scope, lres).unwrap();
                         if res.contains_key("json") {
-                            return Json(res.get("json")).into_response();
+                            return annotate_response(&res, Json(res.get("json")).into_response());
+                        }
+                        if res.contains_key("html") {
+                            let body: String =
+                                serde_json::from_value(res.get("html").unwrap().clone()).unwrap();
+                            return annotate_response(&res, Html(body).into_response());
                         }
 
                         return Html("").into_response();
@@ -371,6 +376,20 @@ impl JsRunner {
             self.run_route(&req).await;
         }
     }
+}
+
+fn annotate_response(
+    resp_obj: &serde_json::Map<String, Value>,
+    resp: Response<Body>,
+) -> Response<Body> {
+    let resp1 = if resp_obj.contains_key("status") {
+        let code: u16 = serde_json::from_value(resp_obj.get("status").unwrap().clone()).unwrap();
+        let scode = StatusCode::from_u16(code).unwrap();
+        (scode, resp).into_response()
+    } else {
+        resp
+    };
+    return resp1;
 }
 
 struct RouteRequest {
