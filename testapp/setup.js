@@ -2,8 +2,9 @@
 
 console.log("core");
 
-createCache(async () => {
-  return { akey: 1 };
+await createCache(async () => {
+  console.log("creating cache");
+  return { akey: 1, bkey: 2 };
 });
 
 route("/foo", async () => {
@@ -12,6 +13,9 @@ route("/foo", async () => {
 });
 
 route("/", async () => {
+  console.log("full cache", getCache());
+  console.log("skey cache", getCache("akey"));
+  console.log("skey cache list", getCache(["akey"]));
   return "hello from the function in  main";
 });
 

@@ -9,6 +9,7 @@ use axum::{
     Router,
 };
 use deno_core::op2;
+use deno_core::serde_v8::from_v8;
 use deno_core::JsRuntime;
 use deno_core::{serde_v8::to_v8, OpState};
 use serde_json::Value;
@@ -19,6 +20,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::env;
 use std::rc::Rc;
+use std::sync::RwLock;
 use std::thread;
 use tokio::sync::mpsc;
 use tokio::sync::oneshot;
@@ -26,6 +28,8 @@ use tokio::task;
 use tokio::time::{sleep, Duration};
 
 mod sqltojson;
+
+static CACHE_VALUE_LOCK: RwLock<Value> = RwLock::new(Value::Null);
 
 #[op2()]
 fn op_route(state: &mut OpState, #[string] path: &str, #[global] router: v8::Global<v8::Function>) {
@@ -49,26 +53,75 @@ async fn op_query(state: Rc<RefCell<OpState>>, #[string] sqlq: String) -> serde_
 }
 
 #[op2()]
-fn op_create_cache(
-    state: Rc<RefCell<OpState>>,
-    #[global] create_cache_fn: v8::Global<v8::Function>,
-) -> () {
-    let state = state.borrow();
-    let cache_fn_ref = state.borrow::<Rc<RefCell<Option<v8::Global<v8::Function>>>>>();
-    cache_fn_ref.replace(Some(create_cache_fn));
-    //dbg!(&rows);
+#[serde]
+fn op_get_cache_value() -> serde_json::Value {
+    let r1 = CACHE_VALUE_LOCK.read().unwrap();
+    return (*r1).clone(); //TODO this is bad
+}
+
+#[op2()]
+#[serde]
+fn op_get_cache_subset_value(#[serde] subset: serde_json::Value) -> serde_json::Value {
+    //fn op_get_cache_subset_value(subset: serde_json::Value) -> Value {
+    let r1 = CACHE_VALUE_LOCK.read().unwrap();
+    match (subset, &(*r1)) {
+        (Value::String(key), Value::Object(o)) => o.get(&key).unwrap_or(&Value::Null).clone(),
+        (Value::Array(keys), Value::Object(o)) => {
+            let mut mp = serde_json::Map::new();
+            keys.into_iter().for_each(|vkey| match vkey {
+                Value::String(key) => {
+                    mp.insert(key.clone(), o.get(&key).unwrap_or(&Value::Null).clone());
+                    return ();
+                }
+                _ => {
+                    panic!("invalid key");
+                }
+            });
+            Value::Object(mp)
+        }
+        _ => panic!("unknown subset"),
+    }
+}
+
+#[op2()]
+fn op_create_cache(state: &mut OpState, #[global] create_cache_fn: v8::Global<v8::Function>) -> () {
+    let hmref = state.borrow::<Rc<RefCell<HashMap<String, v8::Global<v8::Function>>>>>();
+    let mut routes = hmref.borrow_mut();
+    routes.insert(String::from("__create_cache"), create_cache_fn);
     return ();
     //    return rows.len().try_into().unwrap();
 }
 
-#[op2()]
-fn op_flush_cache(state: Rc<RefCell<OpState>>, scope: &mut v8::HandleScope) -> () {
+#[op2(async)]
+async fn op_flush_cache(state: Rc<RefCell<OpState>>) -> () {
     let state = state.borrow();
-    let cache_fn_ref = state.borrow::<Rc<RefCell<Option<v8::Global<v8::Function>>>>>();
-    let cache_fn = cache_fn_ref.borrow();
-    //dbg!(&rows);
-    return ();
-    //    return rows.len().try_into().unwrap();
+    let txref = state.borrow::<Rc<RefCell<Option<mpsc::Sender<RouteRequest>>>>>();
+    let otxreq = txref.borrow_mut();
+    let (tx, rx) = oneshot::channel();
+    if let Some(txreq) = otxreq.as_ref() {
+        let sendres = txreq
+            .send(RouteRequest {
+                route_name: String::from("__create_cache"),
+                response_channel: tx,
+                route_args: serde_json::Map::new(),
+                //request: req,
+            })
+            .await;
+
+        match sendres {
+            Ok(_) => (),
+            Err(e) => {
+                panic!("Send Error: {}", e);
+            }
+        }
+
+        match rx.await {
+            Ok(_v) => return (),
+            Err(_e) => {
+                panic!("error in flush cache")
+            }
+        };
+    }
 }
 
 #[op2(async)]
@@ -78,7 +131,15 @@ async fn op_sleep(ms: u32) {
 
 deno_core::extension!(
     my_extension,
-    ops = [op_route, op_query, op_sleep, op_create_cache],
+    ops = [
+        op_route,
+        op_query,
+        op_sleep,
+        op_create_cache,
+        op_flush_cache,
+        op_get_cache_value,
+        op_get_cache_subset_value
+    ],
     js = ["src/runtime.js"]
 );
 
@@ -130,7 +191,7 @@ impl std::ops::Deref for JsRunner {
 }
 
 impl JsRunner {
-    async fn new() -> JsRunner {
+    async fn new(tx_req: Option<mpsc::Sender<RouteRequest>>) -> JsRunner {
         let dir = get_init_dir();
         let setup_path = [dir, String::from("setup.js")].concat();
 
@@ -147,14 +208,12 @@ impl JsRunner {
         let route_map: HashMap<String, v8::Global<v8::Function>> = HashMap::new();
 
         let hmref = Rc::new(RefCell::new(route_map));
-        let create_cache_fn: Rc<RefCell<Option<v8::Global<v8::Function>>>> =
-            Rc::new(RefCell::new(None::<v8::Global<v8::Function>>));
+        let txref = Rc::new(RefCell::new(tx_req));
+
         js_runtime.op_state().borrow_mut().put(Rc::clone(&pool));
         js_runtime.op_state().borrow_mut().put(Rc::clone(&hmref));
-        js_runtime
-            .op_state()
-            .borrow_mut()
-            .put(Rc::clone(&create_cache_fn));
+        js_runtime.op_state().borrow_mut().put(Rc::clone(&txref));
+
         let mod_id = js_runtime.load_main_es_module(&init_module).await;
         let result = js_runtime.mod_evaluate(mod_id.unwrap());
         js_runtime.run_event_loop(Default::default()).await.unwrap();
@@ -164,7 +223,6 @@ impl JsRunner {
             inner: Rc::new(JsRunnerInner {
                 routes: (*hmref.borrow()).clone(),
                 runtime: Rc::new(RefCell::new(js_runtime)),
-                // db_pool: pool,
             }),
         };
     }
@@ -187,20 +245,24 @@ impl JsRunner {
     }
 
     #[tokio::main(flavor = "current_thread")]
-    async fn run_thread(rx_req: mpsc::Receiver<RouteRequest>) {
-        let runner = JsRunner::new().await;
+    async fn run_thread(tx_req: mpsc::Sender<RouteRequest>, rx_req: mpsc::Receiver<RouteRequest>) {
+        let runner = JsRunner::new(Some(tx_req)).await;
         runner.run_loop(rx_req).await;
     }
 
     fn spawn_thread() -> mpsc::Sender<RouteRequest> {
-        let (tx_req, rx_req) = mpsc::channel(32);
-        thread::spawn(|| {
-            JsRunner::run_thread(rx_req);
+        let (tx_req, rx_req) = mpsc::channel(128);
+        let tx_req1 = tx_req.clone();
+        thread::spawn(move || {
+            JsRunner::run_thread(tx_req1, rx_req);
         });
         return tx_req;
     }
 
-    async fn run_route(&self, req: &RouteRequest) -> Response<Body> {
+    async fn run_route_value(
+        &self,
+        req: &RouteRequest,
+    ) -> Result<v8::Global<v8::Value>, Response<Body>> {
         let hm = &self.routes;
 
         if let Some(gf) = hm.get(&*(req.route_name)) {
@@ -225,27 +287,60 @@ impl JsRunner {
                 .await;
             if let Err(e) = func_res0 {
                 dbg!(e);
-                return (StatusCode::INTERNAL_SERVER_ERROR, Html("Error")).into_response();
+                return Err((StatusCode::INTERNAL_SERVER_ERROR, Html("Error")).into_response());
             }
             let func_res1 = func_res0.unwrap();
 
+            return Ok(func_res1);
+        } else {
+            return Err((StatusCode::NOT_FOUND, Html("404 not found")).into_response());
+        }
+    }
+    async fn run_route(&self, req: &RouteRequest) -> Response<Body> {
+        let res = self.run_route_value(req).await;
+        if req.route_name == "__create_cache" {
             let runtime = unsafe { &mut *self.runtime.as_ptr() };
             let scope = &mut runtime.handle_scope();
+            let v8_val = v8::Local::new(scope, res.unwrap());
+            let serde_val: Value = from_v8(scope, v8_val).unwrap();
+            //save to global
 
-            //let func_res0 = func_res_promise.await.unwrap();
-            let func_res = func_res1.open(scope);
+            let mut cache = CACHE_VALUE_LOCK.write().unwrap();
+            *cache = serde_val;
 
-            if func_res.is_string() {
-                let s = func_res
-                    .to_string(scope)
-                    .unwrap()
-                    .to_rust_string_lossy(scope);
-                return Html(s).into_response();
-            } else {
-                return Html("").into_response();
-            }
+            return Html("").into_response();
         } else {
-            return (StatusCode::NOT_FOUND, Html("404 not found")).into_response();
+            match res {
+                Ok(func_res1) => {
+                    let runtime = unsafe { &mut *self.runtime.as_ptr() };
+                    let scope = &mut runtime.handle_scope();
+                    let func_res = func_res1.open(scope);
+
+                    if func_res.is_string() {
+                        let s = func_res
+                            .to_string(scope)
+                            .unwrap()
+                            .to_rust_string_lossy(scope);
+                        return Html(s).into_response();
+                    } else {
+                        return Html("").into_response();
+                    }
+                }
+                Err(e) => e,
+            }
+        }
+    }
+
+    async fn populate_initial_cache(&self) {
+        if self.inner.routes.contains_key("__create_cache") {
+            let (tx, _) = oneshot::channel();
+            let req = RouteRequest {
+                route_name: String::from("__create_cache"),
+                response_channel: tx,
+                route_args: serde_json::Map::new(),
+                //request: req,
+            };
+            self.run_route(&req).await;
         }
     }
 }
@@ -254,7 +349,7 @@ struct RouteRequest {
     route_name: String,
     response_channel: oneshot::Sender<Response<Body>>,
     route_args: serde_json::Map<String, Value>,
-    request: Request,
+    //request: Request,
 }
 
 #[derive(Clone)]
@@ -264,18 +359,23 @@ struct RouteState {
 
 #[tokio::main]
 async fn main() {
-    let runner = JsRunner::new().await;
+    let runner = JsRunner::new(None).await;
     let routemap = runner.routes.clone();
+    runner.populate_initial_cache().await;
     drop(runner);
     let paths = routemap.keys();
 
     let tx_req = JsRunner::spawn_thread();
 
     print!("Starting server");
-    let rstate = RouteState { tx_req: tx_req };
+    let rstate = RouteState { tx_req };
     let app: Router = paths
         .fold(Router::new(), |router, path| {
-            router.route(path, get(req_handler))
+            if path.starts_with("/") {
+                router.route(path, get(req_handler))
+            } else {
+                router
+            }
         })
         .with_state(rstate);
 
@@ -295,8 +395,6 @@ async fn req_handler(
     let path = match_path.as_str();
     let parvals =
         serde_json::Map::from_iter(raw_params.iter().map(|(k, v)| (String::from(k), v.into())));
-    dbg!(path);
-    dbg!(raw_params);
     let (tx, rx) = oneshot::channel();
     let sendres = state
         .tx_req
@@ -304,7 +402,7 @@ async fn req_handler(
             route_name: String::from(path),
             response_channel: tx,
             route_args: parvals,
-            request: req,
+            //request: req,
         })
         .await;
     match sendres {
