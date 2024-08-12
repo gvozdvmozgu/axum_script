@@ -92,6 +92,28 @@ fn op_create_cache(state: &mut OpState, #[global] create_cache_fn: v8::Global<v8
     //    return rows.len().try_into().unwrap();
 }
 
+#[op2()]
+#[serde]
+fn op_with_cache<'s>(
+    state: &mut OpState,
+    scope: &mut v8::HandleScope<'s>,
+    #[global] gxformer: v8::Global<v8::Function>,
+) -> serde_json::Value {
+    let r1 = CACHE_VALUE_LOCK.read().unwrap();
+    let xformer = gxformer.open(scope);
+    let v8_val = to_v8(scope, &(*r1)).unwrap();
+    let fres = xformer.call(scope, v8_val, &[v8_val]);
+    match fres {
+        Some(v) => {
+            return from_v8(scope, v).unwrap();
+        }
+        None => {
+            panic!("withcache function error");
+        }
+    }
+    //    return rows.len().try_into().unwrap();
+}
+
 #[op2(async)]
 async fn op_flush_cache(state: Rc<RefCell<OpState>>) -> () {
     let state = state.borrow();
@@ -138,7 +160,8 @@ deno_core::extension!(
         op_create_cache,
         op_flush_cache,
         op_get_cache_value,
-        op_get_cache_subset_value
+        op_get_cache_subset_value,
+        op_with_cache
     ],
     js = ["src/runtime.js"]
 );

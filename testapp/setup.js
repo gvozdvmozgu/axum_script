@@ -16,6 +16,10 @@ route("/", async () => {
   console.log("full cache", getCache());
   console.log("skey cache", getCache("akey"));
   console.log("skey cache list", getCache(["akey"]));
+  console.log(
+    "skey cache function",
+    getCache((c) => c.akey + c.bkey)
+  );
   return "hello from the function in  main";
 });
 
