@@ -60,6 +60,30 @@ fn op_get_cache_value() -> serde_json::Value {
 }
 
 #[op2()]
+#[serde]
+fn op_get_cache_subset_value(#[serde] subset: serde_json::Value) -> serde_json::Value {
+    //fn op_get_cache_subset_value(subset: serde_json::Value) -> Value {
+    let r1 = CACHE_VALUE_LOCK.read().unwrap();
+    match (subset, &(*r1)) {
+        (Value::String(key), Value::Object(o)) => o.get(&key).unwrap_or(&Value::Null).clone(),
+        (Value::Array(keys), Value::Object(o)) => {
+            let mut mp = serde_json::Map::new();
+            keys.into_iter().for_each(|vkey| match vkey {
+                Value::String(key) => {
+                    mp.insert(key.clone(), o.get(&key).unwrap_or(&Value::Null).clone());
+                    return ();
+                }
+                _ => {
+                    panic!("invalid key");
+                }
+            });
+            Value::Object(mp)
+        }
+        _ => panic!("unknown subset"),
+    }
+}
+
+#[op2()]
 fn op_create_cache(state: &mut OpState, #[global] create_cache_fn: v8::Global<v8::Function>) -> () {
     let hmref = state.borrow::<Rc<RefCell<HashMap<String, v8::Global<v8::Function>>>>>();
     let mut routes = hmref.borrow_mut();
@@ -113,7 +137,8 @@ deno_core::extension!(
         op_sleep,
         op_create_cache,
         op_flush_cache,
-        op_get_cache_value
+        op_get_cache_value,
+        op_get_cache_subset_value
     ],
     js = ["src/runtime.js"]
 );
