@@ -54,6 +54,20 @@ async fn op_query(state: Rc<RefCell<OpState>>, #[string] sqlq: String) -> serde_
     }
 }
 
+//async fn op_connect_db(state: Rc<RefCell<OpState>>, #[serde] conn_obj: serde_json::Value) -> () {
+
+#[op2(async)]
+async fn op_connect_db(state: Rc<RefCell<OpState>>, #[string] conn_obj: String) -> () {
+    let state = state.borrow();
+
+    let opoolref = state.borrow::<Rc<RefCell<Option<Pool<Any>>>>>();
+
+    let pool = connect_database(&conn_obj).await;
+    dbg!("connected to db from inside op");
+    opoolref.replace(Some(pool));
+    return ();
+}
+
 #[op2()]
 #[serde]
 fn op_get_cache_value() -> serde_json::Value {
@@ -162,7 +176,8 @@ deno_core::extension!(
         op_flush_cache,
         op_get_cache_value,
         op_get_cache_subset_value,
-        op_with_cache
+        op_with_cache,
+        op_connect_db
     ],
     js = ["src/runtime.js"]
 );
@@ -227,9 +242,7 @@ impl JsRunner {
             ..Default::default()
         });
         // following https://github.com/DataDog/datadog-static-analyzer/blob/cde26f42f1cdbbeb09650403318234f277138bbd/crates/static-analysis-kernel/src/analysis/ddsa_lib/runtime.rs#L54
-        let pool = Rc::new(RefCell::new(Some(
-            connect_database("sqlite://sqlite.db").await,
-        )));
+        let pool: Rc<RefCell<Option<Pool<Any>>>> = Rc::new(RefCell::new(None));
 
         let route_map: HashMap<String, v8::Global<v8::Function>> = HashMap::new();
 

@@ -2,6 +2,8 @@
 
 console.log("core");
 
+await connectToDatabase("sqlite://sqlite.db");
+
 await createCache(async () => {
   console.log("creating cache");
   return { akey: 1, bkey: 2 };

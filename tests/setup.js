@@ -1,5 +1,11 @@
 import {} from "./other.js";
 
+console.log("connecting to database");
+
+await connectToDatabase("sqlite://sqlite.db");
+
+console.log("connected");
+
 await createCache(async () => {
   console.log("creating cache");
   return { akey: 1, bkey: 2 };
