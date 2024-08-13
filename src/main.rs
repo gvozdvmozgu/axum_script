@@ -206,8 +206,11 @@ async fn connect_database(db_url: &str) -> Pool<Any> {
     } else {
         println!("Database already exists");
     }
-    let db = AnyPool::connect(db_url).await.unwrap();
-    return db;
+    let dbr = AnyPool::connect(db_url).await;
+    match dbr {
+        Ok(db) => db,
+        Err(e) => panic!("error: {}", e),
+    }
 }
 
 struct JsRunnerInner {
