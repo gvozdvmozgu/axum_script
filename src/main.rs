@@ -63,7 +63,7 @@ async fn op_execute(state: Rc<RefCell<OpState>>, #[string] sqlq: String) -> () {
         Ok(_v) => return (),
         Err(e) => {
             dbg!(e);
-            panic!("error in flush cache")
+            panic!("error in execute")
         }
     };
 }
