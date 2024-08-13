@@ -1,8 +1,14 @@
 import {} from "./other.js";
 
+await execute(`create table if not exists names (
+   id INTEGER PRIMARY KEY,
+   name TEXT NOT NULL
+);`);
+
 await createCache(async () => {
   console.log("creating cache");
-  return { akey: 1, bkey: 2 };
+  //const name_rows = await query("select name from names");
+  return { akey: 1, bkey: 2 }; //names: name_rows.map((row) => row.name) };
 });
 
 route("/db-txt", async () => {

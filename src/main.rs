@@ -52,6 +52,22 @@ async fn op_query(state: Rc<RefCell<OpState>>, #[string] sqlq: String) -> serde_
     //    return rows.len().try_into().unwrap();
 }
 
+#[op2(async)]
+#[serde]
+async fn op_execute(state: Rc<RefCell<OpState>>, #[string] sqlq: String) -> () {
+    let state = state.borrow();
+    let poolref = state.borrow::<Rc<RefCell<Pool<Any>>>>();
+    let pool = poolref.borrow();
+    let qres = sqlx::query(&sqlq).execute(&(*pool)).await;
+    match qres {
+        Ok(_v) => return (),
+        Err(e) => {
+            dbg!(e);
+            panic!("error in flush cache")
+        }
+    };
+}
+
 #[op2()]
 #[serde]
 fn op_get_cache_value() -> serde_json::Value {
@@ -155,6 +171,7 @@ deno_core::extension!(
     ops = [
         op_route,
         op_query,
+        op_execute,
         op_sleep,
         op_create_cache,
         op_flush_cache,
