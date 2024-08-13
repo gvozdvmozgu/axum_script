@@ -1,3 +1,5 @@
+import {} from "./other.js";
+
 await createCache(async () => {
   console.log("creating cache");
   return { akey: 1, bkey: 2 };

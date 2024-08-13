@@ -47,3 +47,10 @@ Deno.test("Query string", async () => {
   const txt = await resp.text();
   assertEquals(txt, "hello from the baz with arg 1");
 });
+
+Deno.test("Import", async () => {
+  const resp = await fetch("http://localhost:4000/other");
+
+  const txt = await resp.text();
+  assertEquals(txt, "hello from import");
+});
