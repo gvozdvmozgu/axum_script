@@ -1,13 +1,25 @@
 //import { op_route } from "ext:core/ops";
+console.log("creating db");
 
-console.log("core");
 await execute(`create table if not exists names (
   id INTEGER PRIMARY KEY,
   name TEXT NOT NULL
 );`);
+
+console.log("db created");
+
 await createCache(async () => {
   console.log("creating cache");
   return { akey: 1, bkey: 2 };
+});
+
+route("/mkdb", async () => {
+  await execute(`create table if not exists names (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL
+  );`);
+
+  return `hello from mkdb`;
 });
 
 route("/foo", async () => {
