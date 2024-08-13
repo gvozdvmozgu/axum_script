@@ -28,3 +28,22 @@ Deno.test("Status code", async () => {
 
   assertEquals(txt, "short and stout");
 });
+
+Deno.test("Get cache", async () => {
+  const resp = await fetch("http://localhost:4000/get-cache");
+  assertEquals(resp.headers.get("content-type"), "application/json");
+  assertEquals(resp.status, 200);
+
+  const c = await resp.json();
+
+  assertEquals(c.sum, 3);
+  assertEquals(c.akey, 1);
+  assertEquals(c.list.akey, 1);
+});
+
+Deno.test("Query string", async () => {
+  const resp = await fetch("http://localhost:4000/baz/1");
+
+  const txt = await resp.text();
+  assertEquals(txt, "hello from the baz with arg 1");
+});

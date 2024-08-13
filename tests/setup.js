@@ -1,7 +1,3 @@
-//import { op_route } from "ext:core/ops";
-
-console.log("core");
-
 await createCache(async () => {
   console.log("creating cache");
   return { akey: 1, bkey: 2 };
@@ -21,15 +17,15 @@ route("/teapot", async () => {
   return { html: "short and stout", status: 418 };
 });
 
-route("/cache-full", async () => {
-  console.log("full cache", getCache());
-  console.log("skey cache", getCache("akey"));
-  console.log("skey cache list", getCache(["akey"]));
-  console.log(
-    "skey cache function",
-    getCache((c) => c.akey + c.bkey)
-  );
-  return getCache();
+route("/get-cache", async () => {
+  return {
+    json: {
+      all: getCache(),
+      akey: getCache("akey"),
+      list: getCache(["akey"]),
+      sum: getCache((c) => c.akey + c.bkey),
+    },
+  };
 });
 
 route("/baz/:id", async ({ id }) => {
