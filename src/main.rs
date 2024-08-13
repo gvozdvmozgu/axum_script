@@ -43,13 +43,15 @@ fn op_route(state: &mut OpState, #[string] path: &str, #[global] router: v8::Glo
 #[serde]
 async fn op_query(state: Rc<RefCell<OpState>>, #[string] sqlq: String) -> serde_json::Value {
     let state = state.borrow();
-    let poolref = state.borrow::<Rc<RefCell<Pool<Any>>>>();
-    let pool = poolref.borrow();
-    let rows = sqlx::query(&sqlq).fetch_all(&(*pool)).await.unwrap();
-    let rows: Vec<Value> = rows.iter().map(row_to_json).collect();
-    //dbg!(&rows);
-    return Value::Array(rows);
-    //    return rows.len().try_into().unwrap();
+    let opoolref = state.borrow::<Rc<RefCell<Option<Pool<Any>>>>>();
+    let opool = opoolref.borrow();
+    if let Some(pool) = &(*opool) {
+        let rows = sqlx::query(&sqlq).fetch_all(&(*pool)).await.unwrap();
+        let rows: Vec<Value> = rows.iter().map(row_to_json).collect();
+        return Value::Array(rows);
+    } else {
+        panic!("not connected to database")
+    }
 }
 
 #[op2()]
@@ -225,7 +227,9 @@ impl JsRunner {
             ..Default::default()
         });
         // following https://github.com/DataDog/datadog-static-analyzer/blob/cde26f42f1cdbbeb09650403318234f277138bbd/crates/static-analysis-kernel/src/analysis/ddsa_lib/runtime.rs#L54
-        let pool = Rc::new(RefCell::new(connect_database("sqlite://sqlite.db").await));
+        let pool = Rc::new(RefCell::new(Some(
+            connect_database("sqlite://sqlite.db").await,
+        )));
 
         let route_map: HashMap<String, v8::Global<v8::Function>> = HashMap::new();
 
