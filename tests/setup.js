@@ -1,10 +1,7 @@
 import {} from "./other.js";
 
-console.log("connecting to database");
-
 await connectToDatabase("sqlite://sqlite.db");
 
-console.log("connected");
 await execute(`create table if not exists names (
    id INTEGER PRIMARY KEY,
    name TEXT NOT NULL
@@ -44,11 +41,11 @@ route("/get-cache", async () => {
   };
 });
 
-route("/baz/:id", async ({ id }) => {
+route("/baz/:id", async ({ params: { id } }) => {
   return `hello from the baz with arg ${id}`;
 });
 
-route("/insert-name/:name", async ({ name }) => {
+route("/insert-name/:name", async ({ params: { name } }) => {
   await execute(`insert into names(name) values ('${name}');`);
   await flushCache();
   return `OK`;

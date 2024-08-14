@@ -12,7 +12,7 @@ use deno_core::op2;
 use deno_core::serde_v8::from_v8;
 use deno_core::JsRuntime;
 use deno_core::{serde_v8::to_v8, OpState};
-use serde_json::Value;
+use serde_json::{json, Value};
 use sqltojson::row_to_json;
 use sqlx::Pool;
 use sqlx::{migrate::MigrateDatabase, Any, AnyPool, Sqlite};
@@ -335,11 +335,9 @@ impl JsRunner {
                 let runtime = unsafe { &mut *self.runtime.as_ptr() };
                 let args = {
                     let mut scope = &mut runtime.handle_scope();
-                    let v8_arg: v8::Local<v8::Value> = to_v8(
-                        &mut scope,
-                        serde_json::Value::Object(req.route_args.clone()),
-                    )
-                    .unwrap();
+                    let params = serde_json::Value::Object(req.route_args.clone());
+                    let jsreq = json!({"params": params});
+                    let v8_arg: v8::Local<v8::Value> = to_v8(&mut scope, jsreq).unwrap();
 
                     &[v8::Global::new(&mut *scope, v8_arg)]
                 };

@@ -1,5 +1,4 @@
 //import { op_route } from "ext:core/ops";
-console.log("creating db");
 
 await connectToDatabase("sqlite://sqlite.db");
 
@@ -40,7 +39,7 @@ route("/", async () => {
   return "hello from the function in  main";
 });
 
-route("/baz/:id", async ({ id }) => {
+route("/baz/:id", async ({ params: { id } }) => {
   return `hello from the baz with arg ${id}`;
 });
 
