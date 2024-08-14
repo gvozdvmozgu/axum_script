@@ -2,14 +2,15 @@ import {} from "./other.js";
 
 await connectToDatabase("sqlite://sqlite.db");
 
-await execute(`create table if not exists names (
+await execute(`create table if not exists person (
    id INTEGER PRIMARY KEY,
-   name TEXT NOT NULL
+   name TEXT NOT NULL,
+   age INTEGER
 );`);
 
 await createCache(async () => {
   console.log("creating cache");
-  const name_rows = await query("select name from names");
+  const name_rows = await query("select name from person order by id");
   const c = { akey: 1, bkey: 2, names: name_rows.map((row) => row.name) };
   console.log("new cache", c);
 
@@ -45,8 +46,8 @@ route("/baz/:id", async ({ params: { id } }) => {
   return `hello from the baz with arg ${id}`;
 });
 
-route("/insert-name/:name", async ({ params: { name } }) => {
-  await execute(`insert into names(name) values ('${name}');`);
+route("/insert-name/:name/:age", async ({ params: { name, age } }) => {
+  await execute(`insert into person(name, age) values ('${name}', '${age}');`);
   await flushCache();
   return `OK`;
 });
