@@ -1,5 +1,7 @@
 import { assert, assertEquals } from "jsr:@std/assert@1";
 
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
 Deno.test("Text from DB", async () => {
   const resp = await fetch("http://localhost:4000/db-txt");
   assertEquals(resp.headers.get("content-type"), "text/html; charset=utf-8");
@@ -53,4 +55,20 @@ Deno.test("Import", async () => {
 
   const txt = await resp.text();
   assertEquals(txt, "hello from import");
+});
+
+Deno.test("Insert and Flush cache", async () => {
+  const resp0 = await fetch("http://localhost:4000/insert-name/Alex");
+  assertEquals(resp0.status, 200);
+
+  const txt = await resp0.text();
+  assertEquals(txt, "OK");
+  await sleep(500);
+  const resp = await fetch("http://localhost:4000/get-cache");
+  assertEquals(resp.headers.get("content-type"), "application/json");
+  assertEquals(resp.status, 200);
+  const c = await resp.json();
+  assertEquals(c.all.names.length, 1);
+
+  assertEquals(c.all.names[0], "Alex");
 });
