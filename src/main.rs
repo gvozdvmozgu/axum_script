@@ -39,21 +39,6 @@ fn op_route(state: &mut OpState, #[string] path: &str, #[global] router: v8::Glo
     ()
 }
 
-#[op2(async)]
-#[serde]
-async fn op_query(state: Rc<RefCell<OpState>>, #[string] sqlq: String) -> serde_json::Value {
-    let state = state.borrow();
-    let opoolref = state.borrow::<Rc<RefCell<Option<Pool<Any>>>>>();
-    let opool = opoolref.borrow();
-    if let Some(pool) = &(*opool) {
-        let rows = sqlx::query(&sqlq).fetch_all(&(*pool)).await.unwrap();
-        let rows: Vec<Value> = rows.iter().map(row_to_json).collect();
-        return Value::Array(rows);
-    } else {
-        panic!("not connected to database")
-    }
-}
-
 //async fn op_connect_db(state: Rc<RefCell<OpState>>, #[serde] conn_obj: serde_json::Value) -> () {
 
 #[op2(async)]
@@ -70,18 +55,37 @@ async fn op_connect_db(state: Rc<RefCell<OpState>>, #[string] conn_obj: String) 
 
 #[op2(async)]
 #[serde]
+async fn op_query(state: Rc<RefCell<OpState>>, #[string] sqlq: String) -> serde_json::Value {
+    let state = state.borrow();
+    let opoolref = state.borrow::<Rc<RefCell<Option<Pool<Any>>>>>();
+    let opool = opoolref.borrow();
+    if let Some(pool) = &(*opool) {
+        let rows = sqlx::query(&sqlq).fetch_all(&(*pool)).await.unwrap();
+        let rows: Vec<Value> = rows.iter().map(row_to_json).collect();
+        return Value::Array(rows);
+    } else {
+        panic!("not connected to database")
+    }
+}
+
+#[op2(async)]
+#[serde]
 async fn op_execute(state: Rc<RefCell<OpState>>, #[string] sqlq: String) -> () {
     let state = state.borrow();
-    let poolref = state.borrow::<Rc<RefCell<Pool<Any>>>>();
-    let pool = poolref.borrow();
-    let qres = sqlx::query(&sqlq).execute(&(*pool)).await;
-    match qres {
-        Ok(_v) => return (),
-        Err(e) => {
-            dbg!(e);
-            panic!("error in execute")
-        }
-    };
+    let opoolref = state.borrow::<Rc<RefCell<Option<Pool<Any>>>>>();
+    let opool = opoolref.borrow();
+    if let Some(pool) = &(*opool) {
+        let qres = sqlx::query(&sqlq).execute(&(*pool)).await;
+        match qres {
+            Ok(_v) => return (),
+            Err(e) => {
+                dbg!(e);
+                panic!("error in execute")
+            }
+        };
+    } else {
+        panic!("not connected to database")
+    }
 }
 
 #[op2()]

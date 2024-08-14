@@ -1,14 +1,14 @@
 //import { op_route } from "ext:core/ops";
 console.log("creating db");
 
+await connectToDatabase("sqlite://sqlite.db");
+
 await execute(`create table if not exists names (
   id INTEGER PRIMARY KEY,
   name TEXT NOT NULL
 );`);
 
 console.log("db created");
-
-await connectToDatabase("sqlite://sqlite.db");
 
 await createCache(async () => {
   console.log("creating cache");
