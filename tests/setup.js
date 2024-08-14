@@ -1,5 +1,10 @@
 import {} from "./other.js";
 
+console.log("connecting to database");
+
+await connectToDatabase("sqlite://sqlite.db");
+
+console.log("connected");
 await execute(`create table if not exists names (
    id INTEGER PRIMARY KEY,
    name TEXT NOT NULL

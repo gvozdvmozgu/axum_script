@@ -39,33 +39,53 @@ fn op_route(state: &mut OpState, #[string] path: &str, #[global] router: v8::Glo
     ()
 }
 
+//async fn op_connect_db(state: Rc<RefCell<OpState>>, #[serde] conn_obj: serde_json::Value) -> () {
+
+#[op2(async)]
+async fn op_connect_db(state: Rc<RefCell<OpState>>, #[string] conn_obj: String) -> () {
+    let state = state.borrow();
+
+    let opoolref = state.borrow::<Rc<RefCell<Option<Pool<Any>>>>>();
+
+    let pool = connect_database(&conn_obj).await;
+    dbg!("connected to db from inside op");
+    opoolref.replace(Some(pool));
+    return ();
+}
+
 #[op2(async)]
 #[serde]
 async fn op_query(state: Rc<RefCell<OpState>>, #[string] sqlq: String) -> serde_json::Value {
     let state = state.borrow();
-    let poolref = state.borrow::<Rc<RefCell<Pool<Any>>>>();
-    let pool = poolref.borrow();
-    let rows = sqlx::query(&sqlq).fetch_all(&(*pool)).await.unwrap();
-    let rows: Vec<Value> = rows.iter().map(row_to_json).collect();
-    //dbg!(&rows);
-    return Value::Array(rows);
-    //    return rows.len().try_into().unwrap();
+    let opoolref = state.borrow::<Rc<RefCell<Option<Pool<Any>>>>>();
+    let opool = opoolref.borrow();
+    if let Some(pool) = &(*opool) {
+        let rows = sqlx::query(&sqlq).fetch_all(&(*pool)).await.unwrap();
+        let rows: Vec<Value> = rows.iter().map(row_to_json).collect();
+        return Value::Array(rows);
+    } else {
+        panic!("not connected to database")
+    }
 }
 
 #[op2(async)]
 #[serde]
 async fn op_execute(state: Rc<RefCell<OpState>>, #[string] sqlq: String) -> () {
     let state = state.borrow();
-    let poolref = state.borrow::<Rc<RefCell<Pool<Any>>>>();
-    let pool = poolref.borrow();
-    let qres = sqlx::query(&sqlq).execute(&(*pool)).await;
-    match qres {
-        Ok(_v) => return (),
-        Err(e) => {
-            dbg!(e);
-            panic!("error in execute")
-        }
-    };
+    let opoolref = state.borrow::<Rc<RefCell<Option<Pool<Any>>>>>();
+    let opool = opoolref.borrow();
+    if let Some(pool) = &(*opool) {
+        let qres = sqlx::query(&sqlq).execute(&(*pool)).await;
+        match qres {
+            Ok(_v) => return (),
+            Err(e) => {
+                dbg!(e);
+                panic!("error in execute")
+            }
+        };
+    } else {
+        panic!("not connected to database")
+    }
 }
 
 #[op2()]
@@ -177,7 +197,8 @@ deno_core::extension!(
         op_flush_cache,
         op_get_cache_value,
         op_get_cache_subset_value,
-        op_with_cache
+        op_with_cache,
+        op_connect_db
     ],
     js = ["src/runtime.js"]
 );
@@ -206,8 +227,11 @@ async fn connect_database(db_url: &str) -> Pool<Any> {
     } else {
         println!("Database already exists");
     }
-    let db = AnyPool::connect(db_url).await.unwrap();
-    return db;
+    let dbr = AnyPool::connect(db_url).await;
+    match dbr {
+        Ok(db) => db,
+        Err(e) => panic!("error: {}", e),
+    }
 }
 
 struct JsRunnerInner {
@@ -242,7 +266,7 @@ impl JsRunner {
             ..Default::default()
         });
         // following https://github.com/DataDog/datadog-static-analyzer/blob/cde26f42f1cdbbeb09650403318234f277138bbd/crates/static-analysis-kernel/src/analysis/ddsa_lib/runtime.rs#L54
-        let pool = Rc::new(RefCell::new(connect_database("sqlite://sqlite.db").await));
+        let pool: Rc<RefCell<Option<Pool<Any>>>> = Rc::new(RefCell::new(None));
 
         let route_map: HashMap<String, v8::Global<v8::Function>> = HashMap::new();
 

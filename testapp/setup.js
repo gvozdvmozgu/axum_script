@@ -1,6 +1,8 @@
 //import { op_route } from "ext:core/ops";
 console.log("creating db");
 
+await connectToDatabase("sqlite://sqlite.db");
+
 await execute(`create table if not exists names (
   id INTEGER PRIMARY KEY,
   name TEXT NOT NULL
