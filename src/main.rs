@@ -12,6 +12,7 @@ use deno_core::op2;
 use deno_core::serde_v8::from_v8;
 use deno_core::JsRuntime;
 use deno_core::{serde_v8::to_v8, OpState};
+use serde_json::value::Number;
 use serde_json::{json, Value};
 use sqltojson::row_to_json;
 use sqlx::Pool;
@@ -55,12 +56,32 @@ async fn op_connect_db(state: Rc<RefCell<OpState>>, #[string] conn_obj: String) 
 
 #[op2(async)]
 #[serde]
-async fn op_query(state: Rc<RefCell<OpState>>, #[string] sqlq: String) -> serde_json::Value {
+async fn op_query(
+    state: Rc<RefCell<OpState>>,
+    #[string] sqlq: String,
+    #[serde] pars: Vec<serde_json::Value>,
+) -> serde_json::Value {
     let state = state.borrow();
     let opoolref = state.borrow::<Rc<RefCell<Option<Pool<Any>>>>>();
     let opool = opoolref.borrow();
     if let Some(pool) = &(*opool) {
-        let rows = sqlx::query(&sqlq).fetch_all(&(*pool)).await.unwrap();
+        //let mut q =;
+
+        let boundq: sqlx::query::Query<Any, sqlx::any::AnyArguments> =
+            pars.into_iter()
+                .fold(sqlx::query(&sqlq), |q, par| match par {
+                    Value::String(s) => q.bind(s),
+                    Value::Bool(b) => q.bind(b),
+                    Value::Number(x) => {
+                        if Number::is_i64(&x) {
+                            q.bind(x.as_i64())
+                        } else {
+                            q.bind(x.as_f64())
+                        }
+                    }
+                    _ => panic!("unknonw argumen"),
+                });
+        let rows = boundq.fetch_all(&(*pool)).await.unwrap();
         let rows: Vec<Value> = rows.iter().map(row_to_json).collect();
         return Value::Array(rows);
     } else {
@@ -70,12 +91,30 @@ async fn op_query(state: Rc<RefCell<OpState>>, #[string] sqlq: String) -> serde_
 
 #[op2(async)]
 #[serde]
-async fn op_execute(state: Rc<RefCell<OpState>>, #[string] sqlq: String) -> () {
+async fn op_execute(
+    state: Rc<RefCell<OpState>>,
+    #[string] sqlq: String,
+    #[serde] pars: Vec<serde_json::Value>,
+) -> () {
     let state = state.borrow();
     let opoolref = state.borrow::<Rc<RefCell<Option<Pool<Any>>>>>();
     let opool = opoolref.borrow();
     if let Some(pool) = &(*opool) {
-        let qres = sqlx::query(&sqlq).execute(&(*pool)).await;
+        let boundq: sqlx::query::Query<Any, sqlx::any::AnyArguments> =
+            pars.into_iter()
+                .fold(sqlx::query(&sqlq), |q, par| match par {
+                    Value::String(s) => q.bind(s),
+                    Value::Bool(b) => q.bind(b),
+                    Value::Number(x) => {
+                        if Number::is_i64(&x) {
+                            q.bind(x.as_i64())
+                        } else {
+                            q.bind(x.as_f64())
+                        }
+                    }
+                    _ => panic!("unknonw argumen"),
+                });
+        let qres = boundq.execute(&(*pool)).await;
         match qres {
             Ok(_v) => return (),
             Err(e) => {
