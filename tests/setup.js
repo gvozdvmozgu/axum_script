@@ -7,8 +7,11 @@ await execute(`create table if not exists names (
 
 await createCache(async () => {
   console.log("creating cache");
-  //const name_rows = await query("select name from names");
-  return { akey: 1, bkey: 2 }; //names: name_rows.map((row) => row.name) };
+  const name_rows = await query("select name from names");
+  const c = { akey: 1, bkey: 2, names: name_rows.map((row) => row.name) };
+  console.log("new cache", c);
+
+  return c;
 });
 
 route("/db-txt", async () => {
@@ -38,6 +41,12 @@ route("/get-cache", async () => {
 
 route("/baz/:id", async ({ id }) => {
   return `hello from the baz with arg ${id}`;
+});
+
+route("/insert-name/:name", async ({ name }) => {
+  await execute(`insert into names(name) values ('${name}');`);
+  await flushCache();
+  return `OK`;
 });
 
 // to test for multithreading: autocannon -c 10 -d 5 -p 10 http://127.0.0.1:4000/sleep
