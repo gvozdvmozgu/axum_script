@@ -47,13 +47,13 @@ route("/baz/:id", async ({ params: { id } }) => {
 });
 
 route("/insert-name/:name/:age", async ({ params: { name, age } }) => {
-  await execute(`insert into person(name, age) values ('${name}', '${age}');`);
+  await execute(`insert into person(name, age) values ($1, $2);`, [name, age]);
   await flushCache();
   return `OK`;
 });
 
 route("/get-age/:name", async ({ params: { name } }) => {
-  const rows = await query(`select * from person where name='${name}';`);
+  const rows = await query(`select * from person where name=$1;`, [name]);
   if (rows.length > 0) return { json: rows[0] };
   else return { json: { error: "not found" } };
 });

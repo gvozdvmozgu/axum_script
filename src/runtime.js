@@ -17,8 +17,8 @@
   };
 
   globalThis.route = Deno.core.ops.op_route;
-  globalThis.query = Deno.core.ops.op_query;
-  globalThis.execute = Deno.core.ops.op_execute;
+  globalThis.query = (sql, pars = []) => Deno.core.ops.op_query(sql, pars);
+  globalThis.execute = (sql, pars = []) => Deno.core.ops.op_execute(sql, pars);
   globalThis.sleep = Deno.core.ops.op_sleep;
   globalThis.createCache = Deno.core.ops.op_create_cache;
   globalThis.flushCache = Deno.core.ops.op_flush_cache;
