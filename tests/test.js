@@ -68,6 +68,7 @@ Deno.test("Insert and Flush cache", async () => {
   assertEquals(resp.headers.get("content-type"), "application/json");
   assertEquals(resp.status, 200);
   const c = await resp.json();
+  assertEquals(c.all.names.length, 1);
 
   assertEquals(c.all.names[0], "Alex");
 });
