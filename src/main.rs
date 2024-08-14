@@ -52,6 +52,22 @@ async fn op_query(state: Rc<RefCell<OpState>>, #[string] sqlq: String) -> serde_
     //    return rows.len().try_into().unwrap();
 }
 
+#[op2(async)]
+#[serde]
+async fn op_execute(state: Rc<RefCell<OpState>>, #[string] sqlq: String) -> () {
+    let state = state.borrow();
+    let poolref = state.borrow::<Rc<RefCell<Pool<Any>>>>();
+    let pool = poolref.borrow();
+    let qres = sqlx::query(&sqlq).execute(&(*pool)).await;
+    match qres {
+        Ok(_v) => return (),
+        Err(e) => {
+            dbg!(e);
+            panic!("error in execute")
+        }
+    };
+}
+
 #[op2()]
 #[serde]
 fn op_get_cache_value() -> serde_json::Value {
@@ -118,12 +134,12 @@ async fn op_flush_cache(state: Rc<RefCell<OpState>>) -> () {
     let state = state.borrow();
     let txref = state.borrow::<Rc<RefCell<Option<mpsc::Sender<RouteRequest>>>>>();
     let otxreq = txref.borrow_mut();
-    let (tx, rx) = oneshot::channel();
+    //let (tx, rx) = oneshot::channel();
     if let Some(txreq) = otxreq.as_ref() {
         let sendres = txreq
             .send(RouteRequest {
                 route_name: String::from("__create_cache"),
-                response_channel: tx,
+                response_channel: None,
                 route_args: serde_json::Map::new(),
                 //request: req,
             })
@@ -135,13 +151,13 @@ async fn op_flush_cache(state: Rc<RefCell<OpState>>) -> () {
                 panic!("Send Error: {}", e);
             }
         }
-
-        match rx.await {
+        //TODO await response before returning
+        /*match rx.await {
             Ok(_v) => return (),
             Err(_e) => {
                 panic!("error in flush cache")
             }
-        };
+        };*/
     }
 }
 
@@ -155,6 +171,7 @@ deno_core::extension!(
     ops = [
         op_route,
         op_query,
+        op_execute,
         op_sleep,
         op_create_cache,
         op_flush_cache,
@@ -257,7 +274,9 @@ impl JsRunner {
                     let this = self.clone();
                     task::spawn_local(async move {
                         let response = this.run_route(&req).await;
-                        req.response_channel.send(response).unwrap();
+                        if let Some(resp_chan) = req.response_channel {
+                            resp_chan.send(response).unwrap();
+                        }
 
                         // ...
                     });
@@ -366,10 +385,10 @@ impl JsRunner {
 
     async fn populate_initial_cache(&self) {
         if self.inner.routes.contains_key("__create_cache") {
-            let (tx, _) = oneshot::channel();
+            //let (tx, _) = oneshot::channel();
             let req = RouteRequest {
                 route_name: String::from("__create_cache"),
-                response_channel: tx,
+                response_channel: None,
                 route_args: serde_json::Map::new(),
                 //request: req,
             };
@@ -394,7 +413,7 @@ fn annotate_response(
 
 struct RouteRequest {
     route_name: String,
-    response_channel: oneshot::Sender<Response<Body>>,
+    response_channel: Option<oneshot::Sender<Response<Body>>>,
     route_args: serde_json::Map<String, Value>,
     //request: Request,
 }
@@ -403,34 +422,48 @@ struct RouteRequest {
 struct RouteState {
     tx_req: mpsc::Sender<RouteRequest>,
 }
+fn main() {
+    let paths = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(async {
+            let runner = JsRunner::new(None).await;
+            let routemap = runner.routes.clone();
+            runner.populate_initial_cache().await;
+            drop(runner);
+            routemap.keys().cloned().collect::<Vec<_>>()
+        });
 
-#[tokio::main]
-async fn main() {
-    let runner = JsRunner::new(None).await;
-    let routemap = runner.routes.clone();
-    runner.populate_initial_cache().await;
-    drop(runner);
-    let paths = routemap.keys();
+    let paths = paths.iter();
 
-    let tx_req = JsRunner::spawn_thread();
+    let axum = async {
+        let tx_req = JsRunner::spawn_thread();
 
-    print!("Starting server");
-    let rstate = RouteState { tx_req };
-    let app: Router = paths
-        .fold(Router::new(), |router, path| {
-            if path.starts_with("/") {
-                router.route(path, get(req_handler))
-            } else {
-                router
-            }
-        })
-        .with_state(rstate);
+        print!("Starting server");
+        let rstate = RouteState { tx_req };
+        let app: Router = paths
+            .fold(Router::new(), |router, path| {
+                if path.starts_with("/") {
+                    router.route(path, get(req_handler))
+                } else {
+                    router
+                }
+            })
+            .with_state(rstate);
 
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:4000")
-        .await
-        .unwrap();
-    println!("listening on {}", listener.local_addr().unwrap());
-    axum::serve(listener, app).await.unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:4000")
+            .await
+            .unwrap();
+        println!("listening on {}", listener.local_addr().unwrap());
+        axum::serve(listener, app).await.unwrap();
+    };
+
+    tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .expect("Failed building the Runtime")
+        .block_on(axum);
 }
 
 async fn req_handler(
@@ -447,7 +480,7 @@ async fn req_handler(
         .tx_req
         .send(RouteRequest {
             route_name: String::from(path),
-            response_channel: tx,
+            response_channel: Some(tx),
             route_args: parvals,
             //request: req,
         })

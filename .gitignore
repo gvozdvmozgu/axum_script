@@ -18,4 +18,4 @@ Cargo.lock
 
 /target
 
-sqlite.db
+sqlite.db*
