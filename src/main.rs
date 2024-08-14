@@ -420,34 +420,48 @@ struct RouteRequest {
 struct RouteState {
     tx_req: mpsc::Sender<RouteRequest>,
 }
+fn main() {
+    let paths = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(async {
+            let runner = JsRunner::new(None).await;
+            let routemap = runner.routes.clone();
+            runner.populate_initial_cache().await;
+            drop(runner);
+            routemap.keys().cloned().collect::<Vec<_>>()
+        });
 
-#[tokio::main]
-async fn main() {
-    let runner = JsRunner::new(None).await;
-    let routemap = runner.routes.clone();
-    runner.populate_initial_cache().await;
-    drop(runner);
-    let paths = routemap.keys();
+    let paths = paths.iter();
 
-    let tx_req = JsRunner::spawn_thread();
+    let axum = async {
+        let tx_req = JsRunner::spawn_thread();
 
-    print!("Starting server");
-    let rstate = RouteState { tx_req };
-    let app: Router = paths
-        .fold(Router::new(), |router, path| {
-            if path.starts_with("/") {
-                router.route(path, get(req_handler))
-            } else {
-                router
-            }
-        })
-        .with_state(rstate);
+        print!("Starting server");
+        let rstate = RouteState { tx_req };
+        let app: Router = paths
+            .fold(Router::new(), |router, path| {
+                if path.starts_with("/") {
+                    router.route(path, get(req_handler))
+                } else {
+                    router
+                }
+            })
+            .with_state(rstate);
 
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:4000")
-        .await
-        .unwrap();
-    println!("listening on {}", listener.local_addr().unwrap());
-    axum::serve(listener, app).await.unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:4000")
+            .await
+            .unwrap();
+        println!("listening on {}", listener.local_addr().unwrap());
+        axum::serve(listener, app).await.unwrap();
+    };
+
+    tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .expect("Failed building the Runtime")
+        .block_on(axum);
 }
 
 async fn req_handler(
