@@ -151,7 +151,7 @@ async fn op_flush_cache(state: Rc<RefCell<OpState>>) -> () {
                 panic!("Send Error: {}", e);
             }
         }
-
+        //TODO await response before returning
         /*match rx.await {
             Ok(_v) => return (),
             Err(_e) => {
