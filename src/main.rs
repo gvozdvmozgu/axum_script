@@ -134,12 +134,12 @@ async fn op_flush_cache(state: Rc<RefCell<OpState>>) -> () {
     let state = state.borrow();
     let txref = state.borrow::<Rc<RefCell<Option<mpsc::Sender<RouteRequest>>>>>();
     let otxreq = txref.borrow_mut();
-    let (tx, rx) = oneshot::channel();
+    //let (tx, rx) = oneshot::channel();
     if let Some(txreq) = otxreq.as_ref() {
         let sendres = txreq
             .send(RouteRequest {
                 route_name: String::from("__create_cache"),
-                response_channel: tx,
+                response_channel: None,
                 route_args: serde_json::Map::new(),
                 //request: req,
             })
@@ -152,12 +152,12 @@ async fn op_flush_cache(state: Rc<RefCell<OpState>>) -> () {
             }
         }
 
-        match rx.await {
+        /*match rx.await {
             Ok(_v) => return (),
             Err(_e) => {
                 panic!("error in flush cache")
             }
-        };
+        };*/
     }
 }
 
@@ -274,7 +274,9 @@ impl JsRunner {
                     let this = self.clone();
                     task::spawn_local(async move {
                         let response = this.run_route(&req).await;
-                        req.response_channel.send(response).unwrap();
+                        if let Some(resp_chan) = req.response_channel {
+                            resp_chan.send(response).unwrap();
+                        }
 
                         // ...
                     });
@@ -383,10 +385,10 @@ impl JsRunner {
 
     async fn populate_initial_cache(&self) {
         if self.inner.routes.contains_key("__create_cache") {
-            let (tx, _) = oneshot::channel();
+            //let (tx, _) = oneshot::channel();
             let req = RouteRequest {
                 route_name: String::from("__create_cache"),
-                response_channel: tx,
+                response_channel: None,
                 route_args: serde_json::Map::new(),
                 //request: req,
             };
@@ -411,7 +413,7 @@ fn annotate_response(
 
 struct RouteRequest {
     route_name: String,
-    response_channel: oneshot::Sender<Response<Body>>,
+    response_channel: Option<oneshot::Sender<Response<Body>>>,
     route_args: serde_json::Map<String, Value>,
     //request: Request,
 }
@@ -478,7 +480,7 @@ async fn req_handler(
         .tx_req
         .send(RouteRequest {
             route_name: String::from(path),
-            response_channel: tx,
+            response_channel: Some(tx),
             route_args: parvals,
             //request: req,
         })

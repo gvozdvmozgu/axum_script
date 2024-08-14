@@ -56,9 +56,15 @@ Deno.test("Import", async () => {
 });
 
 Deno.test("Insert and Flush cache", async () => {
-  const resp = await fetch("http://localhost:4000/insert-name/Alex");
-  assertEquals(resp.status, 200);
+  const resp0 = await fetch("http://localhost:4000/insert-name/Alex");
+  assertEquals(resp0.status, 200);
 
-  const txt = await resp.text();
+  const txt = await resp0.text();
   assertEquals(txt, "OK");
+  const resp = await fetch("http://localhost:4000/get-cache");
+  assertEquals(resp.headers.get("content-type"), "application/json");
+  assertEquals(resp.status, 200);
+  const c = await resp.json();
+
+  assertEquals(c.all.names[0], "Alex");
 });
