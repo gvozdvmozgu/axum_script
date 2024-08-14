@@ -103,6 +103,7 @@ async fn op_execute(
         let boundq: sqlx::query::Query<Any, sqlx::any::AnyArguments> =
             pars.into_iter()
                 .fold(sqlx::query(&sqlq), |q, par| match par {
+                    // TODO share code with query
                     Value::String(s) => q.bind(s),
                     Value::Bool(b) => q.bind(b),
                     Value::Number(x) => {
