@@ -72,3 +72,9 @@ Deno.test("Insert and Flush cache", async () => {
 
   assertEquals(c.all.names[0], "Alex");
 });
+
+Deno.test("query", async () => {
+  const resp = await fetch("http://localhost:4000/get-age/Alex");
+  const person = await resp.json();
+  assertEquals(person.age, 34);
+});

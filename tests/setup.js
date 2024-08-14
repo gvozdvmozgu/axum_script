@@ -52,6 +52,12 @@ route("/insert-name/:name/:age", async ({ params: { name, age } }) => {
   return `OK`;
 });
 
+route("/get-age/:name", async ({ params: { name } }) => {
+  const rows = await query(`select * from person where name='${name}';`);
+  if (rows.length > 0) return { json: rows[0] };
+  else return { json: { error: "not found" } };
+});
+
 // to test for multithreading: autocannon -c 10 -d 5 -p 10 http://127.0.0.1:4000/sleep
 route("/sleep", async () => {
   await sleep(100);
