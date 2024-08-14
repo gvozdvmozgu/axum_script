@@ -8,6 +8,19 @@ use sqlx::any::AnyRow;
 use sqlx::Decode;
 use sqlx::{postgres::any::AnyColumn, Column, Row, TypeInfo, ValueRef};
 
+/*pub fn bind_value_to_query<'a>(
+    query: Query<'a, Any, AnyArguments>,
+    v: Value,
+) -> Query<'a, Any, AnyArguments<'a>> {
+    match v {
+        Value::String(s) => {
+            let q: Query<'a, Any, AnyArguments> = query.bind(s);
+            q
+        }
+        _ => panic!("unknonw argumen"),
+    }
+}*/
+
 pub fn add_value_to_map(
     mut map: Map<String, Value>,
     (key, value): (String, Value),
