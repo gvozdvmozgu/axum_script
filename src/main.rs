@@ -16,6 +16,7 @@ use deno_core::{serde_v8::to_v8, OpState};
 use extensions::database::database_extension;
 use extensions::datacache::{datacache_extension, set_data_cache};
 
+use futures::StreamExt;
 use serde_json::{json, Value};
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -23,12 +24,14 @@ use std::env;
 use std::rc::Rc;
 use std::thread;
 use tokio::sync::mpsc;
-use tokio::sync::oneshot;
+
 use tokio::task;
 use tokio::time::{sleep, Duration};
+use worker_pool::WorkerPool;
 mod extensions;
 mod routing;
 mod sqltojson;
+mod worker_pool;
 
 #[op2()]
 fn op_route(state: &mut OpState, #[string] path: &str, #[global] router: v8::Global<v8::Function>) {
@@ -285,7 +288,11 @@ fn main() {
         let axum = async {
             let tx_req = JsRunner::spawn_thread();
 
-            let rstate = RouteState { tx_req };
+            let rstate = RouteState {
+                tx_req,
+                workers: WorkerPool::new(12),
+            };
+
             let app: Router = paths
                 .fold(Router::new(), |router, path| {
                     if path.starts_with("/") {
@@ -320,26 +327,21 @@ async fn req_handler(
     let path = match_path.as_str();
     let parvals =
         serde_json::Map::from_iter(raw_params.iter().map(|(k, v)| (String::from(k), v.into())));
-    let (tx, rx) = oneshot::channel();
-    let sendres = state
-        .tx_req
+
+    let worker = state.workers.next_worker();
+    let mut worker = worker.lock().await;
+    worker
         .send(RouteRequest {
             route_name: String::from(path),
-            response_channel: Some(tx),
+            response_channel: None,
             route_args: parvals,
             //request: req,
         })
         .await;
-    match sendres {
-        Ok(_) => match rx.await {
-            Ok(v) => v,
-            Err(e) => {
-                dbg!(e);
-                return (StatusCode::INTERNAL_SERVER_ERROR, Html("Error")).into_response();
-            }
-        },
-        Err(e) => {
-            dbg!(e);
+
+    match worker.receiver.next().await {
+        Some(v) => v,
+        None => {
             return (StatusCode::INTERNAL_SERVER_ERROR, Html("Error")).into_response();
         }
     }

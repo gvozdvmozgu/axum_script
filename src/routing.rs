@@ -4,6 +4,8 @@ use serde_json::Value;
 use tokio::sync::mpsc;
 use tokio::sync::oneshot;
 
+use crate::worker_pool::WorkerPool;
+
 pub struct RouteRequest {
     pub route_name: String,
     pub response_channel: Option<oneshot::Sender<Response<Body>>>,
@@ -14,4 +16,5 @@ pub struct RouteRequest {
 #[derive(Clone)]
 pub struct RouteState {
     pub tx_req: mpsc::Sender<RouteRequest>,
+    pub workers: WorkerPool,
 }

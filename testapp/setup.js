@@ -45,6 +45,6 @@ route("/baz/:id", async ({ params: { id } }) => {
 
 // to test for multithreading: autocannon -c 10 -d 5 -p 10 http://127.0.0.1:4000/sleep
 route("/sleep", async () => {
-  await sleep(100);
+  await sleep(9000);
   return "hello from sleep";
 });
